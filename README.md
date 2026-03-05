@@ -12,6 +12,31 @@ A lightweight, high-performance Wayland widget system that renders SVG templates
 - **Generic**: Run any widget by providing an SVG and a JS script.
 - **Multi-format Packaging**: Automated builds for Release Binaries, RPMs, and Flatpaks.
 
+## Simple Widget Creation
+
+Creating a widget is as simple as:
+1.  **Providing an SVG**: Design your widget in any vector tool (Inkscape, Illustrator, etc.).
+2.  **Writing a JS function**: Add dynamic logic via the `update()` function.
+3.  **Running it**: Point the engine at your files. No compilation required.
+
+```bash
+# Display a static SVG
+waywidget --svg my-widget.svg
+
+# Add interactivity and logic
+waywidget --svg my-widget.svg --script logic.js --updateS 0.033
+```
+
+## CLI Usage
+
+| Parameter | Shorthand | Description | Default |
+|-----------|-----------|-------------|---------|
+| `--svg` | `-s` | Path to the SVG template file (Required) | - |
+| `--script` | `-j` | Path to the JavaScript logic file | - |
+| `--width` | - | Initial window width | `200` |
+| `--height` | - | Initial window height | `200` |
+| `--updateS`| - | Update interval in seconds (e.g. 0.033 for 30fps). Set to `0` for static widgets. | `0.0` |
+
 ## Getting Started
 
 ### Prerequisites
