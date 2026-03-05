@@ -18,7 +18,7 @@ modules:
   - name: waywidget
     buildsystem: simple
     build-commands:
-      - cargo build --release
+      - cargo build --release --manifest-path waywidget/Cargo.toml
       - install -D waywidget/target/release/waywidget /app/bin/waywidget
     sources:
       - type: dir
