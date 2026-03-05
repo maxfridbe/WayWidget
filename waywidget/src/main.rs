@@ -52,7 +52,7 @@ struct Args {
     #[arg(short, long)]
     svg: PathBuf,
     #[arg(short = 'j', long)]
-    script: PathBuf,
+    script: Option<PathBuf>,
     #[arg(long, default_value_t = 200)]
     width: u32,
     #[arg(long, default_value_t = 200)]
@@ -77,57 +77,34 @@ struct ElementHandle {
 
 impl Class for ElementHandle {
     const NAME: &'static str = "ElementHandle";
-
     fn data_constructor(_this: &JsValue, _args: &[JsValue], _context: &mut JsContext) -> JsResult<Self> {
         Err(JsError::from_opaque(JsString::from("Cannot construct ElementHandle directly").into()))
     }
-
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        class.method(
-            JsString::from("setRotation"),
-            3,
-            NativeFunction::from_fn_ptr(|this, args, _context| {
-                let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
-                
-                let angle = args.get_or_undefined(0).as_number().unwrap_or(0.0);
-                let cx = args.get_or_undefined(1).as_number().unwrap_or(50.0);
-                let cy = args.get_or_undefined(2).as_number().unwrap_or(50.0);
-                handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetRotation { angle, cx, cy });
-                
-                Ok(this.clone())
-            }),
-        );
-
-        class.method(
-            JsString::from("setText"),
-            1,
-            NativeFunction::from_fn_ptr(|this, args, context| {
-                let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
-                
-                let text = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-                handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetText(text));
-                
-                Ok(this.clone())
-            }),
-        );
-
-        class.method(
-            JsString::from("setAttribute"),
-            2,
-            NativeFunction::from_fn_ptr(|this, args, context| {
-                let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
-                
-                let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-                let value = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
-                handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetAttribute { name, value });
-                
-                Ok(this.clone())
-            }),
-        );
-
+        class.method(JsString::from("setRotation"), 3, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let angle = args.get_or_undefined(0).as_number().unwrap_or(0.0);
+            let cx = args.get_or_undefined(1).as_number().unwrap_or(50.0);
+            let cy = args.get_or_undefined(2).as_number().unwrap_or(50.0);
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetRotation { angle, cx, cy });
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("setText"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let text = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetText(text));
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("setAttribute"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let value = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetAttribute { name, value });
+            Ok(this.clone())
+        }));
         Ok(())
     }
 }
@@ -142,27 +119,92 @@ struct WidgetAPI {
 
 impl Class for WidgetAPI {
     const NAME: &'static str = "WidgetAPI";
-
     fn data_constructor(_this: &JsValue, _args: &[JsValue], _context: &mut JsContext) -> JsResult<Self> {
         Err(JsError::from_opaque(JsString::from("Cannot construct WidgetAPI directly").into()))
     }
-
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        class.method(
-            JsString::from("findById"),
-            1,
-            NativeFunction::from_fn_ptr(|this, args, context| {
-                let id = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-                let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let api = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetAPI").into()))?;
-                
-                let handle = ElementHandle {
-                    id,
-                    ops: api.ops.clone(),
-                };
-                Ok(JsObject::from_proto_and_data(Some(api.handle_proto.clone()), handle).into())
-            }),
-        );
+        class.method(JsString::from("findById"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let id = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let api = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetAPI").into()))?;
+            let handle = ElementHandle { id, ops: api.ops.clone() };
+            Ok(JsObject::from_proto_and_data(Some(api.handle_proto.clone()), handle).into())
+        }));
+        Ok(())
+    }
+}
+
+#[derive(Clone, Trace, Finalize, JsData)]
+struct WidgetState {
+    #[unsafe_ignore_trace]
+    data: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl Class for WidgetState {
+    const NAME: &'static str = "WidgetState";
+    fn data_constructor(_this: &JsValue, _args: &[JsValue], _context: &mut JsContext) -> JsResult<Self> {
+        Err(JsError::from_opaque(JsString::from("Cannot construct WidgetState directly").into()))
+    }
+    fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        class.method(JsString::from("set"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let val = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+            
+            let mut data = state.data.lock().unwrap();
+            let old_val = data.get(&key);
+            if old_val != Some(&val) {
+                println!("State Set: {} = {}", key, val);
+                data.insert(key, val);
+            }
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("clear"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            state.data.lock().unwrap().remove(&key);
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("setObject"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let val = args.get_or_undefined(1);
+            
+            let json = context.global_object().get(JsString::from("JSON"), context)?.as_object().expect("JSON global exists").clone();
+            let stringify = json.get(JsString::from("stringify"), context)?.as_object().expect("JSON.stringify exists").clone();
+            let stringified = stringify.call(&json.into(), &[val.clone()], context)?.to_string(context)?.to_std_string().unwrap();
+
+            let mut data = state.data.lock().unwrap();
+            let old_val = data.get(&key);
+            if old_val != Some(&stringified) {
+                println!("State Set Object: {} = {}", key, stringified);
+                data.insert(key, stringified);
+            }
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("getObject"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let val = state.data.lock().unwrap().get(&key).cloned().unwrap_or_default();
+            if val.is_empty() {
+                return Ok(JsValue::null());
+            }
+            
+            let json = context.global_object().get(JsString::from("JSON"), context)?.as_object().expect("JSON global exists").clone();
+            let parse = json.get(JsString::from("parse"), context)?.as_object().expect("JSON.parse exists").clone();
+            parse.call(&json.into(), &[JsString::from(val).into()], context)
+        }));
+        class.method(JsString::from("get"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let val = state.data.lock().unwrap().get(&key).cloned().unwrap_or_default();
+            Ok(JsString::from(val).into())
+        }));
         Ok(())
     }
 }
@@ -183,12 +225,16 @@ struct WayWidget {
     viewbox: (f64, f64),
     
     js_context: JsContext,
-    js_api: JsObject,
+    api_proto: JsObject,
+    handle_proto: JsObject,
+    state_proto: JsObject,
     shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
+    shared_state: Arc<Mutex<HashMap<String, String>>>,
     
     pointer: Option<wl_pointer::WlPointer>,
     seat: Option<wl_seat::WlSeat>,
     pointer_pos: (f64, f64),
+    last_click: Option<(f64, f64)>,
     is_hovering: bool,
     
     exit: bool,
@@ -218,9 +264,29 @@ impl WayWidget {
         self.shared_ops.lock().unwrap().clear();
         
         let update_name = JsString::from("update");
-        let update_func = self.js_context.global_object().get(update_name, &mut self.js_context).unwrap();
-        if let Some(func) = update_func.as_object() {
-            func.call(&JsValue::undefined(), &[self.js_api.clone().into(), JsValue::new(timestamp)], &mut self.js_context).ok();
+        let global = self.js_context.global_object();
+        if global.has_property(update_name.clone(), &mut self.js_context).unwrap_or(false) {
+            let update_func = global.get(update_name, &mut self.js_context).unwrap();
+            if let Some(func) = update_func.as_object() {
+                let api_data = WidgetAPI { ops: self.shared_ops.clone(), handle_proto: self.handle_proto.clone() };
+                let js_api = JsObject::from_proto_and_data(Some(self.api_proto.clone()), api_data);
+
+                let state_data = WidgetState { data: self.shared_state.clone() };
+                let js_state = JsObject::from_proto_and_data(Some(self.state_proto.clone()), state_data);
+
+                let click_val = if let Some((x, y)) = self.last_click.take() {
+                    let obj = JsObject::default(self.js_context.intrinsics());
+                    obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
+                    obj.set(JsString::from("y"), JsValue::new(y), true, &mut self.js_context).ok();
+                    obj.into()
+                } else {
+                    JsValue::undefined()
+                };
+                
+                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), click_val, js_state.into()], &mut self.js_context)
+                    .map_err(|e| println!("JS Error in update(): {}", e))
+                    .ok();
+            }
         }
         
         // 2. Apply to tree
@@ -248,7 +314,7 @@ impl WayWidget {
         let mut out = Vec::new();
         self.svg_root.write(&mut out).ok();
 
-        // 4. Zero-Copy Drawing: Create surface directly on Wayland SHM buffer
+        // 4. Zero-Copy Drawing
         let (buffer, canvas) = self
             .pool
             .create_buffer(
@@ -259,9 +325,6 @@ impl WayWidget {
             )
             .expect("create buffer");
 
-        // SAFETY: We use std::mem::transmute to bypass the 'static requirement of create_for_data.
-        // This is safe because we drop the surface and context before the canvas goes out of scope
-        // at the end of this frame.
         unsafe {
             let canvas_static: &'static mut [u8] = std::mem::transmute(canvas);
             let surface = ImageSurface::create_for_data(
@@ -299,7 +362,6 @@ impl WayWidget {
                 cr.close_path();
                 cr.fill().expect("fill handle");
             }
-            
             surface.flush();
         }
 
@@ -335,8 +397,12 @@ impl WindowHandler for WayWidget {
     fn request_close(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _window: &Window) { self.exit = true; }
     fn configure(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _window: &Window, configure: WindowConfigure, _serial: u32) {
         let (w, h) = configure.new_size;
-        self.width = w.map(|v| v.get()).unwrap_or(self.width);
-        self.height = h.map(|v| v.get()).unwrap_or(self.height);
+        let new_w = w.map(|v| v.get()).unwrap_or(self.width);
+        let new_h = h.map(|v| v.get()).unwrap_or(self.height);
+        if new_w != self.width || new_h != self.height {
+            self.width = new_w;
+            self.height = new_h;
+        }
         self.needs_redraw = true;
         self.draw();
     }
@@ -370,8 +436,10 @@ impl PointerHandler for WayWidget {
                 PointerEventKind::Motion { .. } => {}
                 PointerEventKind::Press { button, serial, .. } => {
                     if button == 0x110 {
+                        let (px, py) = self.pointer_pos;
+                        self.last_click = Some((px / self.width as f64, py / self.height as f64));
+                        self.needs_redraw = true;
                         if let Some(seat) = &self.seat {
-                            let (px, py) = self.pointer_pos;
                             if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 {
                                 self.window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight);
                             } else {
@@ -433,15 +501,13 @@ fn main() {
     let pool = SlotPool::new(1200 * 1200 * 4 * 2, &shm_state).expect("create pool");
     let svg_template = fs::read_to_string(&args.svg).expect("read svg");
     let svg_root = Element::parse(svg_template.as_bytes()).expect("parse svg");
-    
-    // Performance: Parse viewBox once
     let viewbox_str = svg_root.attributes.get("viewBox").cloned().unwrap_or("0 0 100 100".to_string());
     let parts: Vec<f64> = viewbox_str.split_whitespace().filter_map(|s| s.parse().ok()).collect();
     let viewbox = if parts.len() == 4 { (parts[2], parts[3]) } else { (100.0, 100.0) };
 
     let mut js_context = JsContext::default();
     
-    // Add console.log
+    // Console.log
     let log_fn = NativeFunction::from_fn_ptr(|_this, args, context| {
         for arg in args {
             print!("{} ", arg.to_string(context).unwrap().to_std_string().unwrap());
@@ -449,32 +515,32 @@ fn main() {
         println!();
         Ok(JsValue::undefined())
     });
-    let console = JsObject::default(js_context.intrinsics());
-    let log_val = JsObject::from_proto_and_data(js_context.intrinsics().constructors().function().prototype(), (log_fn,));
-    console.set(JsString::from("log"), log_val, true, &mut js_context).unwrap();
-    js_context.global_object().set(JsString::from("console"), console, true, &mut js_context).unwrap();
+    let _log_val = js_context.register_global_builtin_callable(JsString::from("log_internal"), 0, log_fn).unwrap();
+    js_context.eval(Source::from_bytes("var console = { log: log_internal };".as_bytes())).unwrap();
 
     js_context.register_global_class::<WidgetAPI>().unwrap();
     js_context.register_global_class::<ElementHandle>().unwrap();
+    js_context.register_global_class::<WidgetState>().unwrap();
     
     let api_proto = get_proto::<WidgetAPI>(&mut js_context);
     let handle_proto = get_proto::<ElementHandle>(&mut js_context);
-
-    // Performance: Initialize shared API object once
+    let state_proto = get_proto::<WidgetState>(&mut js_context);
+    
     let shared_ops = Arc::new(Mutex::new(HashMap::new()));
-    let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: handle_proto.clone() };
-    let js_api = JsObject::from_proto_and_data(Some(api_proto.clone()), api_data);
+    let shared_state = Arc::new(Mutex::new(HashMap::new()));
 
-    let js_source = fs::read_to_string(&args.script).expect("read script");
-    js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script");
+    if let Some(script_path) = &args.script {
+        let js_source = fs::read_to_string(script_path).expect("read script");
+        js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script");
+    }
 
     let mut app = WayWidget {
         registry_state, seat_state, output_state,
         _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state,
         window, pool, qh: qh.clone(),
-        svg_root, viewbox: (viewbox.0, viewbox.1),
-        js_context, js_api, shared_ops,
-        pointer: None, seat: None, pointer_pos: (0.0, 0.0), is_hovering: false,
+        svg_root, viewbox,
+        js_context, api_proto, handle_proto, state_proto, shared_ops, shared_state,
+        pointer: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
         exit: false, width: args.width, height: args.height, needs_redraw: true,
     };
 

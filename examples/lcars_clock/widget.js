@@ -2,7 +2,10 @@ function pad(n) {
     return n < 10 ? '0' + n : n;
 }
 
-function update(api) {
+function update(api, timestamp, click) {
+    if (click) {
+        console.log("LCARS clicked at:", click.x, click.y);
+    }
     const now = new Date();
     
     // Date: MM DD YY

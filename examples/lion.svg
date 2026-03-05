@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="999.99994" height="296.46768" viewBox="0 0 999.99994 296.46768" version="1.1" id="svg14" sodipodi:docname="Lion.svg" inkscape:version="0.92.3 (2405546, 2018-03-11)">
+  <metadata id="metadata18">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+        <dc:title>logo_lion</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview pagecolor="#ffffff" bordercolor="#666666" borderopacity="1" objecttolerance="10" gridtolerance="10" guidetolerance="10" inkscape:pageopacity="0" inkscape:pageshadow="2" inkscape:window-width="1366" inkscape:window-height="705" id="namedview16" showgrid="false" inkscape:zoom="0.70710678" inkscape:cx="618.55037" inkscape:cy="-42.205039" inkscape:window-x="-8" inkscape:window-y="-8" inkscape:window-maximized="1" inkscape:current-layer="svg14"/>
+  <defs id="defs4">
+    <style id="style2">.a{fill:none;}.b{fill:#008051;}.c{fill:#231815;}</style>
+  </defs>
+  <title id="title6">logo_lion</title>
+  <rect class="a" width="1000" height="471.69812" id="rect8" x="658.54034" y="57.55368" style="fill:none;stroke-width:9.43396187"/>
+  <g id="g27" transform="matrix(1.0682253,0,0,1.0392073,0,-180.19891)">
+    <path style="fill:#008051;stroke-width:9.43396187" inkscape:connector-curvature="0" id="path10" d="m 188.67924,390.47582 -12.73585,63.58491 H 0 L 53.396226,177.92865 H 118.58491 L 77.45283,390.47582 Z m 84.90566,63.67924 53.77359,-276.22641 H 260.37735 L 206.88679,454.15506 Z M 936.13207,177.92865 h -66.98113 l -32.83019,169.81132 -74.0566,-169.81132 h -66.69812 l -53.49056,276.22641 h 66.98113 l 31.50943,-159.43396 68.39623,159.43396 h 74.15094 z m -453.77358,-4.5283 A 142.64151,142.64151 0 1 0 625.37735,316.1362 142.64151,142.64151 0 0 0 482.73584,173.40035 Z m 80.18867,142.73585 a 79.90566,79.90566 0 1 1 -79.90566,-79.90566 79.90566,79.90566 0 0 1 79.90566,79.90566 z" class="b"/>
+  </g>
+</svg>

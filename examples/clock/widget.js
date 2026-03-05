@@ -1,4 +1,7 @@
-function update(api) {
+function update(api, timestamp, click) {
+    if (click) {
+        console.log("Clock clicked at:", click.x, click.y);
+    }
     const now = new Date();
     const hours = now.getHours() % 12;
     const minutes = now.getMinutes();

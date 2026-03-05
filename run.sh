@@ -17,7 +17,11 @@ run_example() {
     local h=$5
     local u=$6
     echo "Running example: $name"
-    ./waywidget/target/debug/waywidget --svg "$svg" --script "$script" --width "$w" --height "$h" --updateS "$u"
+    local cmd="./waywidget/target/debug/waywidget --svg $svg --width $w --height $h --updateS $u"
+    if [ -n "$script" ]; then
+        cmd="$cmd --script $script"
+    fi
+    $cmd
 }
 
 # Select example
@@ -32,6 +36,9 @@ case $EXAMPLE in
         ;;
     "sunrise")
         run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450 0.033
+        ;;
+    "lion")
+        run_example "Static Lion" "examples/lion/widget.svg" "" 200 200 0
         ;;
     *)
         echo "Usage: ./run.sh [clock|lcars]"

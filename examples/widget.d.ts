@@ -40,8 +40,50 @@ interface WidgetAPI {
 }
 
 /**
+ * Persistent state store for the widget.
+ */
+interface WidgetState {
+    /**
+     * Sets a persistent string value.
+     * @param key The key to store.
+     * @param value The value to store.
+     */
+    set(key: string, value: string): void;
+
+    /**
+     * Retrieves a persistent string value.
+     * @param key The key to retrieve.
+     * @returns The stored value, or an empty string if not found.
+     */
+    get(key: string): string;
+
+    /**
+     * Clears a persistent value from the state.
+     * @param key The key to clear.
+     */
+    clear(key: string): void;
+
+    /**
+     * Sets a persistent object, serialized as JSON.
+     * @param key The key to store.
+     * @param value The object to store.
+     */
+    setObject(key: string, value: any): void;
+
+    /**
+     * Retrieves a persistent object, deserialized from JSON.
+     * @param key The key to retrieve.
+     * @returns The stored object, or null if not found.
+     */
+    getObject(key: string): any;
+}
+
+/**
  * The main entry point for widget logic.
  * This function is called on every update cycle.
  * @param api The WidgetAPI instance for manipulation.
+ * @param timestamp Current time in milliseconds.
+ * @param click Normalized coordinates of the last click (0-1), or undefined.
+ * @param state Persistent state object for the widget.
  */
-declare function update(api: WidgetAPI): void;
+declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, state?: WidgetState): void;

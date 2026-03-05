@@ -2,6 +2,8 @@
 
 A lightweight, high-performance Wayland widget system that renders SVG templates using Cairo and provides dynamic logic via an embedded JavaScript engine (Boa).
 
+![Sunrise Example](sunrise.png)
+
 ## Features
 
 - **SVG Rendering**: Uses `librsvg` and `cairo` for crisp, vector-based visuals.
@@ -27,20 +29,49 @@ Use the provided helper script to run the examples:
 ./run.sh lcars     # Star Trek themed digital clock
 ./run.sh clock     # Standard analog clock
 ./run.sh sunrise   # Animated 60-second day/night cycle
+./run.sh lion      # Static geometric lion widget
 ```
 
 ## JavaScript Interaction API
 
-The system looks for a global `update(api)` function. For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
+The system looks for a global `update(api, timestamp, click, state)` function.
 
-### Example: LCARS Clock (`widget.js`)
+- `api`: The `WidgetAPI` instance for finding elements and manipulating their attributes.
+- `timestamp`: The current time in milliseconds (useful for animations).
+- `click`: An object `{ x: number, y: number }` representing normalized coordinates (0.0 to 1.0) of the last click, or `null` if no click occurred in the last frame.
+- `state`: A persistent `WidgetState` store that survives between `update` calls.
+
+### Example: Interactive Sunrise (`widget.js`)
 
 ```javascript
-function update(api) {
-    const now = new Date();
-    api.findById("time-display").setText(now.toLocaleTimeString());
+function update(api, timestamp, click, state) {
+    let enabled = state.get("enabled") || "true";
+
+    if (click) {
+        enabled = (enabled === "true") ? "false" : "true";
+        state.set("enabled", enabled);
+        console.log("Animation enabled:", enabled);
+    }
+
+    // Rich state saving with JSON
+    let config = state.getObject("config") || { color: "#ff0000", speed: 1.0 };
+    if (enabled === "true") {
+        api.findById("sun").setAttribute("fill", config.color);
+    }
 }
 ```
+
+### WidgetState API
+
+| Method | Description |
+|--------|-------------|
+| `get(key)` | Retrieves a string value. Returns `""` if not found. |
+| `set(key, value)` | Sets a persistent string value. |
+| `getObject(key)` | Retrieves a JSON-deserialized object. Returns `null` if not found. |
+| `setObject(key, obj)`| Serializes and stores an object as JSON. |
+| `clear(key)` | Removes a key from the persistent state. |
+
+For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
 ## Interaction
 

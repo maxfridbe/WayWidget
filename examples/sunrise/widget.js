@@ -13,11 +13,38 @@ function interpolateColor(color1, color2, factor) {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function update(api, timestamp) {
-    const elapsed = timestamp % LOOP_DURATION;
+function update(api, timestamp, click, state) {
+    // 1. Handle Click Interactivity (Toggle Pause)
+    let enabled = state.get("enabled");
+    if (enabled === "") { // Initial state
+        enabled = "true";
+        state.set("enabled", "true");
+    }
+
+    if (click) {
+        enabled = (enabled === "true") ? "false" : "true";
+        state.set("enabled", enabled);
+        console.log("Sunrise animation enabled:", enabled);
+    }
+
+    // 2. Logic: If paused, use a stored 'pause_time' or just freeze the frame
+    let effectiveTime = timestamp;
+    if (enabled === "false") {
+        let pauseTime = state.get("pause_time");
+        if (pauseTime === "") {
+            state.set("pause_time", timestamp.toString());
+            effectiveTime = timestamp;
+        } else {
+            effectiveTime = parseFloat(pauseTime);
+        }
+    } else {
+        // When unpausing, we might want to offset the time to prevent jumps,
+        // but for now, let's keep it simple and just freeze.
+        state.clear("pause_time"); 
+    }
+
+    const elapsed = effectiveTime % LOOP_DURATION;
     const progress = elapsed / LOOP_DURATION; // 0 to 1
-    
-    // console.log("Progress:", progress, "Timestamp:", timestamp);
 
     // 1. Sun Trajectory
     const angle = (progress * (Math.PI * 1.25)) - 0.1; 
@@ -73,7 +100,7 @@ function update(api, timestamp) {
     ];
 
     clouds.forEach(c => {
-        let currentX = (c.x + (timestamp / 50) * c.speed) % 1000;
+        let currentX = (c.x + (effectiveTime / 50) * c.speed) % 1000;
         if (currentX > 900) currentX -= 1000; 
         api.findById(c.id).setAttribute('cx', (currentX - 50).toString());
         api.findById(c.id).setAttribute('opacity', ((1 - nightAlpha) * 0.5).toString());
@@ -81,5 +108,5 @@ function update(api, timestamp) {
 
     // Update timer
     const seconds = Math.floor(elapsed / 100);
-    api.findById('timer').setText(`Cycle: ${seconds}%`);
+    api.findById('timer').setText(`Cycle: ${seconds}%${enabled === "false" ? " (PAUSED)" : ""}`);
 }

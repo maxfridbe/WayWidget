@@ -1,0 +1,16 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mane -->
+  <path d="M 100 10 L 130 30 L 160 20 L 170 50 L 190 70 L 180 100 L 190 130 L 170 150 L 160 180 L 130 170 L 100 190 L 70 170 L 40 180 L 30 150 L 10 130 L 20 100 L 10 70 L 30 50 L 40 20 L 70 30 Z" fill="#d97706" stroke="#92400e" stroke-width="2"/>
+  <!-- Face Base -->
+  <path d="M 60 70 Q 100 50 140 70 L 140 130 Q 100 160 60 130 Z" fill="#fbbf24"/>
+  <!-- Eyes -->
+  <circle cx="80" cy="90" r="5" fill="#451a03"/>
+  <circle cx="120" cy="90" r="5" fill="#451a03"/>
+  <!-- Nose -->
+  <path d="M 90 110 L 110 110 L 100 120 Z" fill="#451a03"/>
+  <!-- Mouth -->
+  <path d="M 90 130 Q 100 140 110 130" fill="none" stroke="#451a03" stroke-width="2" stroke-linecap="round"/>
+  <!-- Ears -->
+  <circle cx="65" cy="65" r="12" fill="#d97706" stroke="#92400e" stroke-width="2"/>
+  <circle cx="135" cy="65" r="12" fill="#d97706" stroke="#92400e" stroke-width="2"/>
+</svg>
