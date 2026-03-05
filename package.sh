@@ -1,8 +1,13 @@
 #!/bin/bash
 set -e
 
-# Ensure we are in the mounted build directory
-cd /build
+# If we are in the toolchain container, ensure we are in the right directory
+if [ -d "/build" ]; then
+    cd /build
+fi
+
+# Ensure we are in the project root (where this script is)
+cd "$(dirname "$0")"
 
 echo "--- Starting Optimized Incremental Build ---"
 
