@@ -6,7 +6,6 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
-  share-network: true
   env:
     CARGO_HOME: /run/build/waywidget/cargo
 command: waywidget
@@ -17,6 +16,8 @@ finish-args:
   - --device=dri
 modules:
   - name: waywidget
+    build-options:
+      share-network: true
     buildsystem: simple
     build-commands:
       - cargo build --release --manifest-path waywidget/Cargo.toml
