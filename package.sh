@@ -29,11 +29,11 @@ rpmbuild -ba ~/rpmbuild/SPECS/waywidget.spec
 cp ~/rpmbuild/RPMS/x86_64/*.rpm dest/
 
 # 3. Build Flatpak (Uses mounted .flatpak-builder/ for caching)
-echo "Building Flatpak..."
-flatpak-builder --force-clean --disable-rofiles-fuse \
-    --share-network \
-    --ccache \
-    --repo=dest/repo build-dir packaging/org.example.WayWidget.yaml
-flatpak build-bundle dest/repo dest/waywidget.flatpak org.example.WayWidget
+# echo "Building Flatpak..."
+# flatpak-builder --force-clean --disable-rofiles-fuse \
+#     --share-network \
+#     --ccache \
+#     --repo=dest/repo build-dir packaging/org.example.WayWidget.yaml
+# flatpak build-bundle dest/repo dest/waywidget.flatpak org.example.WayWidget
 
 echo "--- Build Complete! ---"

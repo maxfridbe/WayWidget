@@ -29,4 +29,3 @@ jobs:
           path: |
             dest/bin/waywidget
             dest/*.rpm
-            dest/*.flatpak
