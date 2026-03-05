@@ -1,9 +1,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{apply_ops_to_svg, find_element_by_id, SvgOp};
+    use crate::{apply_ops_to_svg, find_element_by_id, SvgOp, WidgetAPI, WidgetState, ElementHandle, JsContext, get_proto};
     use xmltree::Element;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use boa_engine::{Source, JsValue, JsString, JsObject};
 
     fn setup_svg() -> Element {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
@@ -127,5 +129,53 @@ mod tests {
         apply_ops_to_svg(&mut root, ops);
         
         assert!(find_element_by_id(&mut root, "circle1").is_none());
+    }
+
+    #[test]
+    fn test_full_js_integration() {
+        let mut root = setup_svg();
+        let mut js_context = JsContext::default();
+        
+        js_context.register_global_class::<WidgetAPI>().unwrap();
+        js_context.register_global_class::<ElementHandle>().unwrap();
+        js_context.register_global_class::<WidgetState>().unwrap();
+        
+        let api_proto = get_proto::<WidgetAPI>(&mut js_context);
+        let state_proto = get_proto::<WidgetState>(&mut js_context);
+        
+        let shared_ops = Arc::new(Mutex::new(HashMap::new()));
+        let shared_state = Arc::new(Mutex::new(HashMap::new()));
+
+        let js_code = r#"
+            function update(api, timestamp, click, state) {
+                api.findById("rect1").setRotation(90).setOpacity(0.7);
+                api.findById("group1").appendElement("circle", { id: "dynamic_circle", r: "5" });
+                state.set("last_ts", timestamp.toString());
+            }
+        "#;
+        js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
+
+        let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: get_proto::<ElementHandle>(&mut js_context) };
+        let js_api = JsObject::from_proto_and_data(Some(api_proto), api_data);
+        
+        let state_data = WidgetState { data: shared_state.clone() };
+        let js_state = JsObject::from_proto_and_data(Some(state_proto), state_data);
+
+        let update_func = js_context.global_object().get(JsString::from("update"), &mut js_context).unwrap();
+        update_func.as_object().unwrap().call(
+            &JsValue::undefined(),
+            &[js_api.into(), JsValue::new(12345), JsValue::undefined(), js_state.into()],
+            &mut js_context
+        ).unwrap();
+
+        let ops = shared_ops.lock().unwrap().clone();
+        apply_ops_to_svg(&mut root, ops);
+
+        let rect = find_element_by_id(&mut root, "rect1").unwrap();
+        assert_eq!(rect.attributes.get("transform").unwrap(), "rotate(90, 50, 50)");
+        assert_eq!(rect.attributes.get("opacity").unwrap(), "0.7");
+
+        assert!(find_element_by_id(&mut root, "dynamic_circle").is_some());
+        assert_eq!(shared_state.lock().unwrap().get("last_ts").unwrap(), "12345");
     }
 }
