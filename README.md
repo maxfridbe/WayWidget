@@ -96,12 +96,39 @@ function update(api, timestamp, click, state) {
 | `setObject(key, obj)`| Serializes and stores an object as JSON. |
 | `clear(key)` | Removes a key from the persistent state. |
 
+### ElementHandle API
+
+| Method | Description |
+|--------|-------------|
+| `setRotation(angle, cx?, cy?)` | Rotates the element around an optional center point. |
+| `setTranslation(x, y)` | Moves the element by (x, y). |
+| `setScale(factor)` | Scales the element (1.0 is default). |
+| `setText(text)` | Sets the text content of the element. |
+| `setAttribute(name, val)` | Sets a raw SVG attribute (e.g. "fill", "r"). |
+| `setVisible(boolean)` | Toggles the `display: none` attribute. |
+| `setOpacity(0.0-1.0)` | Sets the element's opacity. |
+| `addClass(className)` | Adds a CSS class to the element. |
+| `removeClass(className)` | Removes a CSS class from the element. |
+| `appendElement(tag, attrs)` | Dynamically creates and appends a child SVG element. |
+| `clearChildren()` | Removes all child nodes. |
+| `remove()` | Removes the element from the SVG tree. |
+
 For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
 ## Interaction
 
 - **Move**: Left-click and drag anywhere on the widget to move it.
 - **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window.
+
+## Development & Testing
+
+The system includes a robust suite of unit and integration tests to ensure reliable SVG manipulation and JavaScript integration.
+
+To run the tests:
+```bash
+cd waywidget
+cargo test
+```
 
 ## Packaging & Build System
 
