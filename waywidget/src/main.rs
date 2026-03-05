@@ -64,8 +64,14 @@ struct Args {
 #[derive(Debug, Clone)]
 enum SvgOp {
     SetRotation { angle: f64, cx: f64, cy: f64 },
+    SetTranslation { x: f64, y: f64 },
+    SetScale { factor: f64 },
     SetText(String),
     SetAttribute { name: String, value: String },
+    SetVisible(bool),
+    AddClass(String),
+    RemoveClass(String),
+    SetOpacity(f64),
 }
 
 #[derive(Clone, Trace, Finalize, JsData)]
@@ -90,6 +96,21 @@ impl Class for ElementHandle {
             handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetRotation { angle, cx, cy });
             Ok(this.clone())
         }));
+        class.method(JsString::from("setTranslation"), 2, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let x = args.get_or_undefined(0).as_number().unwrap_or(0.0);
+            let y = args.get_or_undefined(1).as_number().unwrap_or(0.0);
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetTranslation { x, y });
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("setScale"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let factor = args.get_or_undefined(0).as_number().unwrap_or(1.0);
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetScale { factor });
+            Ok(this.clone())
+        }));
         class.method(JsString::from("setText"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
@@ -103,6 +124,34 @@ impl Class for ElementHandle {
             let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let value = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
             handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetAttribute { name, value });
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("setVisible"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let visible = args.get_or_undefined(0).as_boolean().unwrap_or(true);
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetVisible(visible));
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("setOpacity"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let opacity = args.get_or_undefined(0).as_number().unwrap_or(1.0);
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetOpacity(opacity));
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("addClass"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let class_name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::AddClass(class_name));
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("removeClass"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let class_name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::RemoveClass(class_name));
             Ok(this.clone())
         }));
         Ok(())
@@ -293,10 +342,17 @@ impl WayWidget {
         let ops = self.shared_ops.lock().unwrap().clone();
         for (id, el_ops) in ops {
             if let Some(el) = find_element_by_id(&mut self.svg_root, &id) {
+                let mut transforms = Vec::new();
                 for op in el_ops {
                     match op {
                         SvgOp::SetRotation { angle, cx, cy } => {
-                            el.attributes.insert("transform".to_string(), format!("rotate({}, {}, {})", angle, cx, cy));
+                            transforms.push(format!("rotate({}, {}, {})", angle, cx, cy));
+                        }
+                        SvgOp::SetTranslation { x, y } => {
+                            transforms.push(format!("translate({}, {})", x, y));
+                        }
+                        SvgOp::SetScale { factor } => {
+                            transforms.push(format!("scale({})", factor));
                         }
                         SvgOp::SetText(text) => {
                             el.children.clear();
@@ -305,7 +361,33 @@ impl WayWidget {
                         SvgOp::SetAttribute { name, value } => {
                             el.attributes.insert(name, value);
                         }
+                        SvgOp::SetVisible(visible) => {
+                            if visible {
+                                el.attributes.remove("display");
+                            } else {
+                                el.attributes.insert("display".to_string(), "none".to_string());
+                            }
+                        }
+                        SvgOp::SetOpacity(opacity) => {
+                            el.attributes.insert("opacity".to_string(), opacity.to_string());
+                        }
+                        SvgOp::AddClass(class_name) => {
+                            let current = el.attributes.get("class").cloned().unwrap_or_default();
+                            if !current.split_whitespace().any(|c| c == class_name) {
+                                let new_class = if current.is_empty() { class_name } else { format!("{} {}", current, class_name) };
+                                el.attributes.insert("class".to_string(), new_class);
+                            }
+                        }
+                        SvgOp::RemoveClass(class_name) => {
+                            if let Some(current) = el.attributes.get("class").cloned() {
+                                let new_classes: Vec<&str> = current.split_whitespace().filter(|&c| c != class_name).collect();
+                                el.attributes.insert("class".to_string(), new_classes.join(" "));
+                            }
+                        }
                     }
+                }
+                if !transforms.is_empty() {
+                    el.attributes.insert("transform".to_string(), transforms.join(" "));
                 }
             }
         }

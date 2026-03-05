@@ -15,6 +15,19 @@ interface ElementHandle {
     setRotation(angle: number, cx?: number, cy?: number): ElementHandle;
 
     /**
+     * Sets the translation of the element.
+     * @param x Translation on the X axis.
+     * @param y Translation on the Y axis.
+     */
+    setTranslation(x: number, y: number): ElementHandle;
+
+    /**
+     * Sets the scale of the element.
+     * @param factor Scale factor (1.0 is default).
+     */
+    setScale(factor: number): ElementHandle;
+
+    /**
      * Sets the inner text content of the element.
      * @param text The text to display.
      */
@@ -26,6 +39,30 @@ interface ElementHandle {
      * @param value Attribute value.
      */
     setAttribute(name: string, value: string): ElementHandle;
+
+    /**
+     * Sets whether the element is visible.
+     * @param visible True to show, false to hide.
+     */
+    setVisible(visible: boolean): ElementHandle;
+
+    /**
+     * Sets the opacity of the element.
+     * @param opacity Opacity from 0.0 to 1.0.
+     */
+    setOpacity(opacity: number): ElementHandle;
+
+    /**
+     * Adds a CSS class to the element.
+     * @param className The class name to add.
+     */
+    addClass(className: string): ElementHandle;
+
+    /**
+     * Removes a CSS class from the element.
+     * @param className The class name to remove.
+     */
+    removeClass(className: string): ElementHandle;
 }
 
 /**
