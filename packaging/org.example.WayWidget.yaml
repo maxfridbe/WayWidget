@@ -1,0 +1,21 @@
+app-id: org.example.WayWidget
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: waywidget
+separate-locales: false
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+modules:
+  - name: waywidget
+    buildsystem: simple
+    build-commands:
+      - cargo build --release
+      - install -D waywidget/target/release/waywidget /app/bin/waywidget
+    sources:
+      - type: dir
+        path: ..

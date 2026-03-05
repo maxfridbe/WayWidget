@@ -88,7 +88,7 @@ impl Class for ElementHandle {
             3,
             NativeFunction::from_fn_ptr(|this, args, _context| {
                 let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let mut handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
                 
                 let angle = args.get_or_undefined(0).as_number().unwrap_or(0.0);
                 let cx = args.get_or_undefined(1).as_number().unwrap_or(50.0);
@@ -104,7 +104,7 @@ impl Class for ElementHandle {
             1,
             NativeFunction::from_fn_ptr(|this, args, context| {
                 let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let mut handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
                 
                 let text = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
                 handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetText(text));
@@ -118,7 +118,7 @@ impl Class for ElementHandle {
             2,
             NativeFunction::from_fn_ptr(|this, args, context| {
                 let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-                let mut handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+                let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
                 
                 let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
                 let value = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
