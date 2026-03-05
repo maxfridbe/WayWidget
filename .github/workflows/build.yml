@@ -18,7 +18,7 @@ jobs:
       - name: Run Package Script in Container
         run: |
           mkdir -p dest
-          docker run --rm \
+          docker run --rm --privileged \
             -v $(pwd):/build:Z \
             waywidget-toolchain
 
