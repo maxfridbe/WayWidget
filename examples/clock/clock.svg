@@ -1,0 +1,13 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="50" cy="50" r="48" stroke="black" stroke-width="2" fill="white" />
+  <circle cx="50" cy="50" r="2" fill="black" />
+  <g id="hour_hand" transform="rotate(0, 50, 50)">
+    <line x1="50" y1="50" x2="50" y2="25" stroke="black" stroke-width="4" stroke-linecap="round" />
+  </g>
+  <g id="minute_hand" transform="rotate(0, 50, 50)">
+    <line x1="50" y1="50" x2="50" y2="15" stroke="black" stroke-width="3" stroke-linecap="round" />
+  </g>
+  <g id="second_hand" transform="rotate(0, 50, 50)">
+    <line x1="50" y1="50" x2="50" y2="10" stroke="red" stroke-width="1" stroke-linecap="round" />
+  </g>
+</svg>

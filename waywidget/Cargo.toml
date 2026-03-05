@@ -1,0 +1,20 @@
+[package]
+name = "waywidget"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+boa_engine = "0.21.0"
+boa_gc = "0.21.0"
+cairo-rs = "0.22.0"
+calloop = "0.14.4"
+calloop-wayland-source = "0.4.1"
+chrono = "0.4.44"
+clap = { version = "4.5.60", features = ["derive"] }
+gio = "0.22.2"
+glib = "0.22.2"
+librsvg = "2.62.0"
+smithay-client-toolkit = "0.20.0"
+wayland-client = "0.31.12"
+wayland-protocols = { version = "0.32.10", features = ["client"] }
+xmltree = "0.12.0"

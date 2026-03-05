@@ -1,0 +1,30 @@
+<svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+    <!-- Sidebar and Blocks -->
+    <path d="M 0 40 Q 0 0 40 0 L 150 0 L 150 45 L 50 45 Q 40 45 40 55 L 40 445 Q 40 455 50 455 L 150 455 L 150 500 L 40 500 Q 0 500 0 460 Z" fill="#f96d6d" />
+    <rect x="50" y="55" width="100" height="90" fill="#f9c86d" />
+    <rect x="50" y="155" width="100" height="90" fill="#f99c6d" />
+    <rect x="50" y="255" width="100" height="90" fill="#f9c86d" />
+    <rect x="50" y="355" width="100" height="90" fill="#6db6f9" />
+
+    <!-- Header -->
+    <rect x="160" y="0" width="240" height="40" fill="#f96d6d" />
+    <text id="date-display" x="175" y="32" fill="#000" font-family="Impact" font-size="32">03 03 26</text>
+    
+    <rect x="410" y="0" width="45" height="40" fill="#f99c6d" />
+    <text id="day-display" x="465" y="32" fill="#f9c86d" font-family="Impact" font-size="32">TUESDAY</text>
+
+    <!-- Brackets -->
+    <path d="M 240 100 L 210 100 L 210 400 L 240 400" stroke="#6db6f9" stroke-width="6" fill="none" />
+    <path d="M 850 100 L 880 100 L 880 400 L 850 400" stroke="#6db6f9" stroke-width="6" fill="none" />
+    
+    <!-- Main Time -->
+    <!-- Using a group for time to make it easier to find if needed, but text ID is primary -->
+    <text id="time-display" x="287" y="315" fill="#fff" font-family="Impact" font-size="200" text-anchor="start">02:36</text>
+    
+    <!-- Suffixes -->
+    <text id="ampm-display" x="865" y="210" fill="#fff" font-family="Impact" font-size="80" text-anchor="end">PM</text>
+    <text id="sec-display" x="865" y="315" fill="#fff" font-family="Impact" font-size="80" text-anchor="end">15</text>
+
+    <!-- Footer -->
+    <path d="M 160 460 L 910 460 Q 950 460 950 500 L 160 500 Z" fill="#f96d6d" />
+</svg>
