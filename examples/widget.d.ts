@@ -63,6 +63,23 @@ interface ElementHandle {
      * @param className The class name to remove.
      */
     removeClass(className: string): ElementHandle;
+
+    /**
+     * Appends a new child element to this element.
+     * @param tag The SVG tag name (e.g. "circle", "rect").
+     * @param attributes Object containing SVG attributes.
+     */
+    appendElement(tag: string, attributes: Record<string, string>): ElementHandle;
+
+    /**
+     * Removes all child nodes from this element.
+     */
+    clearChildren(): ElementHandle;
+
+    /**
+     * Removes this element from the SVG tree.
+     */
+    remove(): void;
 }
 
 /**

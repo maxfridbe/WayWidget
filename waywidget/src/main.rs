@@ -72,6 +72,9 @@ enum SvgOp {
     AddClass(String),
     RemoveClass(String),
     SetOpacity(f64),
+    AppendElement { tag: String, attributes: HashMap<String, String> },
+    ClearChildren,
+    Remove,
 }
 
 #[derive(Clone, Trace, Finalize, JsData)]
@@ -152,6 +155,33 @@ impl Class for ElementHandle {
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let class_name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::RemoveClass(class_name));
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("appendElement"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            let tag = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let attr_obj = args.get_or_undefined(1).as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Attributes must be an object").into()))?;
+            let mut attributes = HashMap::new();
+            let keys = attr_obj.own_property_keys(context)?;
+            for key in keys {
+                let key_str = key.to_string(context)?.to_std_string().unwrap();
+                let val_str = attr_obj.get(key, context)?.to_string(context)?.to_std_string().unwrap();
+                attributes.insert(key_str, val_str);
+            }
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::AppendElement { tag, attributes });
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("clearChildren"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::ClearChildren);
+            Ok(this.clone())
+        }));
+        class.method(JsString::from("remove"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
+            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::Remove);
             Ok(this.clone())
         }));
         Ok(())
@@ -306,6 +336,30 @@ fn find_element_by_id<'a>(el: &'a mut Element, id: &str) -> Option<&'a mut Eleme
     None
 }
 
+fn remove_element_by_id(el: &mut Element, id: &str) -> bool {
+    let mut to_remove = None;
+    for (i, child) in el.children.iter().enumerate() {
+        if let Some(child_el) = child.as_element() {
+            if child_el.attributes.get("id").map(|s| s.as_str()) == Some(id) {
+                to_remove = Some(i);
+                break;
+            }
+        }
+    }
+    if let Some(i) = to_remove {
+        el.children.remove(i);
+        return true;
+    }
+    for child in &mut el.children {
+        if let Some(child_el) = child.as_mut_element() {
+            if remove_element_by_id(child_el, id) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 impl WayWidget {
     fn draw(&mut self) {
         // 1. Get JS updates
@@ -341,6 +395,19 @@ impl WayWidget {
         // 2. Apply to tree
         let ops = self.shared_ops.lock().unwrap().clone();
         for (id, el_ops) in ops {
+            let mut should_remove = false;
+            for op in &el_ops {
+                if let SvgOp::Remove = op {
+                    should_remove = true;
+                    break;
+                }
+            }
+
+            if should_remove {
+                remove_element_by_id(&mut self.svg_root, &id);
+                continue;
+            }
+
             if let Some(el) = find_element_by_id(&mut self.svg_root, &id) {
                 let mut transforms = Vec::new();
                 for op in el_ops {
@@ -384,6 +451,15 @@ impl WayWidget {
                                 el.attributes.insert("class".to_string(), new_classes.join(" "));
                             }
                         }
+                        SvgOp::AppendElement { tag, attributes } => {
+                            let mut child = xmltree::Element::new(tag);
+                            child.attributes = attributes;
+                            el.children.push(xmltree::XMLNode::Element(child));
+                        }
+                        SvgOp::ClearChildren => {
+                            el.children.clear();
+                        }
+                        SvgOp::Remove => {} // Handled above
                     }
                 }
                 if !transforms.is_empty() {
