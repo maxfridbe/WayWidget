@@ -136,6 +136,8 @@ impl Class for ElementHandle {
 struct WidgetAPI {
     #[unsafe_ignore_trace]
     ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
+    #[unsafe_ignore_trace]
+    handle_proto: JsObject,
 }
 
 impl Class for WidgetAPI {
@@ -158,7 +160,7 @@ impl Class for WidgetAPI {
                     id,
                     ops: api.ops.clone(),
                 };
-                Ok(JsObject::from_proto_and_data(None, handle).into())
+                Ok(JsObject::from_proto_and_data(Some(api.handle_proto.clone()), handle).into())
             }),
         );
         Ok(())
@@ -177,8 +179,12 @@ struct WayWidget {
     pool: SlotPool,
     qh: QueueHandle<Self>,
     
-    svg_template: String,
+    svg_root: Element,
+    viewbox: (f64, f64),
+    
     js_context: JsContext,
+    js_api: JsObject,
+    shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
     
     pointer: Option<wl_pointer::WlPointer>,
     seat: Option<wl_seat::WlSeat>,
@@ -191,97 +197,36 @@ struct WayWidget {
     needs_redraw: bool,
 }
 
-impl WayWidget {
-    fn draw(&mut self) {
-        let ops = self.run_js_update();
-        let svg_data = self.apply_updates(ops);
-
-        let (buffer, canvas) = self
-            .pool
-            .create_buffer(
-                self.width as i32,
-                self.height as i32,
-                self.width as i32 * 4,
-                wl_shm::Format::Argb8888,
-            )
-            .expect("create buffer");
-
-        let mut surface = ImageSurface::create(
-            Format::ARgb32,
-            self.width as i32,
-            self.height as i32,
-        ).expect("cairo surface");
-        
-        {
-            let cr = CairoContext::new(&surface).expect("cairo context");
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
-            cr.set_operator(cairo::Operator::Source);
-            cr.paint().expect("paint clear");
-            cr.set_operator(cairo::Operator::Over);
-
-            let bytes = glib::Bytes::from(svg_data.as_bytes());
-            let stream = MemoryInputStream::from_bytes(&bytes);
-            let handle = Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data");
-            let renderer = CairoRenderer::new(&handle);
-            
-            let root = Element::parse(svg_data.as_bytes()).unwrap();
-            let viewbox = root.attributes.get("viewBox").cloned().unwrap_or("0 0 100 100".to_string());
-            let parts: Vec<f64> = viewbox.split_whitespace().filter_map(|s| s.parse().ok()).collect();
-            
-            cr.save().expect("save content");
-            if parts.len() == 4 {
-                let vb_w = parts[2];
-                let vb_h = parts[3];
-                cr.scale(self.width as f64 / vb_w, self.height as f64 / vb_h);
-                renderer.render_document(&cr, &cairo::Rectangle::new(0.0, 0.0, vb_w, vb_h)).ok();
-            } else {
-                cr.scale(self.width as f64 / 100.0, self.height as f64 / 100.0);
-                renderer.render_document(&cr, &cairo::Rectangle::new(0.0, 0.0, 100.0, 100.0)).ok();
-            }
-            cr.restore().expect("restore content");
-
-            if self.is_hovering {
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.3);
-                let w = self.width as f64;
-                let h = self.height as f64;
-                cr.move_to(w, h - 20.0);
-                cr.line_to(w, h);
-                cr.line_to(w - 20.0, h);
-                cr.close_path();
-                cr.fill().expect("fill handle");
+fn find_element_by_id<'a>(el: &'a mut Element, id: &str) -> Option<&'a mut Element> {
+    if el.attributes.get("id").map(|s| s.as_str()) == Some(id) {
+        return Some(el);
+    }
+    for child in &mut el.children {
+        if let Some(e) = child.as_mut_element() {
+            if let Some(found) = find_element_by_id(e, id) {
+                return Some(found);
             }
         }
-
-        surface.flush();
-        let data = surface.data().expect("surface data");
-        let len = data.len().min(canvas.len());
-        canvas[..len].copy_from_slice(&data[..len]);
-
-        self.window.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-        self.window.wl_surface().damage_buffer(0, 0, self.width as i32, self.height as i32);
-        self.window.wl_surface().commit();
-        self.needs_redraw = false;
     }
+    None
+}
 
-    fn run_js_update(&mut self) -> HashMap<String, Vec<SvgOp>> {
-        let ops = Arc::new(Mutex::new(HashMap::new()));
-        let api = WidgetAPI { ops: ops.clone() };
-        let js_api = JsObject::from_proto_and_data(None, api);
+impl WayWidget {
+    fn draw(&mut self) {
+        // 1. Get JS updates
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64;
+        self.shared_ops.lock().unwrap().clear();
         
         let update_name = JsString::from("update");
         let update_func = self.js_context.global_object().get(update_name, &mut self.js_context).unwrap();
         if let Some(func) = update_func.as_object() {
-            func.call(&JsValue::undefined(), &[js_api.into()], &mut self.js_context).ok();
+            func.call(&JsValue::undefined(), &[self.js_api.clone().into(), JsValue::new(timestamp)], &mut self.js_context).ok();
         }
         
-        let locked = ops.lock().unwrap();
-        locked.clone()
-    }
-
-    fn apply_updates(&self, ops: HashMap<String, Vec<SvgOp>>) -> String {
-        let mut root = Element::parse(self.svg_template.as_bytes()).expect("parse template");
+        // 2. Apply to tree
+        let ops = self.shared_ops.lock().unwrap().clone();
         for (id, el_ops) in ops {
-            if let Some(el) = self.find_element_by_id(&mut root, &id) {
+            if let Some(el) = find_element_by_id(&mut self.svg_root, &id) {
                 for op in el_ops {
                     match op {
                         SvgOp::SetRotation { angle, cx, cy } => {
@@ -298,23 +243,70 @@ impl WayWidget {
                 }
             }
         }
-        let mut out = Vec::new();
-        root.write(&mut out).ok();
-        String::from_utf8(out).unwrap_or_else(|_| self.svg_template.clone())
-    }
 
-    fn find_element_by_id<'a>(&self, el: &'a mut Element, id: &str) -> Option<&'a mut Element> {
-        if el.attributes.get("id").map(|s| s.as_str()) == Some(id) {
-            return Some(el);
-        }
-        for child in &mut el.children {
-            if let Some(e) = child.as_mut_element() {
-                if let Some(found) = self.find_element_by_id(e, id) {
-                    return Some(found);
-                }
+        // 3. Serialize tree
+        let mut out = Vec::new();
+        self.svg_root.write(&mut out).ok();
+
+        // 4. Zero-Copy Drawing: Create surface directly on Wayland SHM buffer
+        let (buffer, canvas) = self
+            .pool
+            .create_buffer(
+                self.width as i32,
+                self.height as i32,
+                self.width as i32 * 4,
+                wl_shm::Format::Argb8888,
+            )
+            .expect("create buffer");
+
+        // SAFETY: We use std::mem::transmute to bypass the 'static requirement of create_for_data.
+        // This is safe because we drop the surface and context before the canvas goes out of scope
+        // at the end of this frame.
+        unsafe {
+            let canvas_static: &'static mut [u8] = std::mem::transmute(canvas);
+            let surface = ImageSurface::create_for_data(
+                canvas_static,
+                Format::ARgb32,
+                self.width as i32,
+                self.height as i32,
+                self.width as i32 * 4,
+            ).expect("cairo surface");
+            
+            let cr = CairoContext::new(&surface).expect("cairo context");
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+            cr.set_operator(cairo::Operator::Source);
+            cr.paint().expect("paint clear");
+            cr.set_operator(cairo::Operator::Over);
+
+            let bytes = glib::Bytes::from(&out);
+            let stream = MemoryInputStream::from_bytes(&bytes);
+            let handle = Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data");
+            let renderer = CairoRenderer::new(&handle);
+            
+            cr.save().expect("save content");
+            let (vb_w, vb_h) = self.viewbox;
+            cr.scale(self.width as f64 / vb_w, self.height as f64 / vb_h);
+            renderer.render_document(&cr, &cairo::Rectangle::new(0.0, 0.0, vb_w, vb_h)).ok();
+            cr.restore().expect("restore content");
+
+            if self.is_hovering {
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.3);
+                let w = self.width as f64;
+                let h = self.height as f64;
+                cr.move_to(w, h - 20.0);
+                cr.line_to(w, h);
+                cr.line_to(w - 20.0, h);
+                cr.close_path();
+                cr.fill().expect("fill handle");
             }
+            
+            surface.flush();
         }
-        None
+
+        self.window.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+        self.window.wl_surface().damage_buffer(0, 0, self.width as i32, self.height as i32);
+        self.window.wl_surface().commit();
+        self.needs_redraw = false;
     }
 }
 
@@ -408,6 +400,15 @@ impl ProvidesRegistryState for WayWidget {
     smithay_client_toolkit::registry_handlers![SeatState, OutputState];
 }
 
+fn get_proto<T: Class>(js_context: &mut JsContext) -> JsObject {
+    js_context.global_object()
+        .get(JsString::from(T::NAME), js_context).unwrap()
+        .as_object().unwrap()
+        .get(JsString::from("prototype"), js_context).unwrap()
+        .as_object().unwrap()
+        .clone()
+}
+
 fn main() {
     let args = Args::parse();
     let conn = Connection::connect_to_env().expect("connect to wayland");
@@ -431,11 +432,39 @@ fn main() {
 
     let pool = SlotPool::new(1200 * 1200 * 4 * 2, &shm_state).expect("create pool");
     let svg_template = fs::read_to_string(&args.svg).expect("read svg");
+    let svg_root = Element::parse(svg_template.as_bytes()).expect("parse svg");
     
+    // Performance: Parse viewBox once
+    let viewbox_str = svg_root.attributes.get("viewBox").cloned().unwrap_or("0 0 100 100".to_string());
+    let parts: Vec<f64> = viewbox_str.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+    let viewbox = if parts.len() == 4 { (parts[2], parts[3]) } else { (100.0, 100.0) };
+
     let mut js_context = JsContext::default();
+    
+    // Add console.log
+    let log_fn = NativeFunction::from_fn_ptr(|_this, args, context| {
+        for arg in args {
+            print!("{} ", arg.to_string(context).unwrap().to_std_string().unwrap());
+        }
+        println!();
+        Ok(JsValue::undefined())
+    });
+    let console = JsObject::default(js_context.intrinsics());
+    let log_val = JsObject::from_proto_and_data(js_context.intrinsics().constructors().function().prototype(), (log_fn,));
+    console.set(JsString::from("log"), log_val, true, &mut js_context).unwrap();
+    js_context.global_object().set(JsString::from("console"), console, true, &mut js_context).unwrap();
+
     js_context.register_global_class::<WidgetAPI>().unwrap();
     js_context.register_global_class::<ElementHandle>().unwrap();
     
+    let api_proto = get_proto::<WidgetAPI>(&mut js_context);
+    let handle_proto = get_proto::<ElementHandle>(&mut js_context);
+
+    // Performance: Initialize shared API object once
+    let shared_ops = Arc::new(Mutex::new(HashMap::new()));
+    let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: handle_proto.clone() };
+    let js_api = JsObject::from_proto_and_data(Some(api_proto.clone()), api_data);
+
     let js_source = fs::read_to_string(&args.script).expect("read script");
     js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script");
 
@@ -443,7 +472,8 @@ fn main() {
         registry_state, seat_state, output_state,
         _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state,
         window, pool, qh: qh.clone(),
-        svg_template, js_context,
+        svg_root, viewbox: (viewbox.0, viewbox.1),
+        js_context, js_api, shared_ops,
         pointer: None, seat: None, pointer_pos: (0.0, 0.0), is_hovering: false,
         exit: false, width: args.width, height: args.height, needs_redraw: true,
     };

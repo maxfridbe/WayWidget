@@ -30,6 +30,9 @@ case $EXAMPLE in
     "lcars")
         run_example "LCARS Clock" "examples/lcars_clock/widget.svg" "examples/lcars_clock/widget.js" 600 300 1.0
         ;;
+    "sunrise")
+        run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450 0.033
+        ;;
     *)
         echo "Usage: ./run.sh [clock|lcars]"
         ;;

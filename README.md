@@ -24,8 +24,9 @@ sudo apt install libwayland-dev libcairo2-dev librsvg2-dev libxkbcommon-dev pkg-
 Use the provided helper script to run the examples:
 
 ```bash
-./run.sh lcars   # Star Trek themed digital clock
-./run.sh clock   # Standard analog clock
+./run.sh lcars     # Star Trek themed digital clock
+./run.sh clock     # Standard analog clock
+./run.sh sunrise   # Animated 60-second day/night cycle
 ```
 
 ## JavaScript Interaction API
