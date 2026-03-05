@@ -23,7 +23,7 @@ cp waywidget/target/release/waywidget dest/bin/
 echo "Building RPM..."
 mkdir -p ~/rpmbuild/{SOURCES,SPECS,RPMS,SRPMS,BUILD,BUILDROOT}
 # We create a minimal tarball just for the spec's sake
-tar -czf ~/rpmbuild/SOURCES/waywidget-0.1.2.tar.gz --exclude='./waywidget/target' --transform 's,^,waywidget-0.1.2/,' .
+tar -czf ~/rpmbuild/SOURCES/waywidget-0.1.3.tar.gz --exclude='./waywidget/target' --transform 's,^,waywidget-0.1.3/,' .
 cp packaging/waywidget.spec ~/rpmbuild/SPECS/
 rpmbuild -ba ~/rpmbuild/SPECS/waywidget.spec
 cp ~/rpmbuild/RPMS/x86_64/*.rpm dest/
