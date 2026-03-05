@@ -5,9 +5,10 @@ A lightweight, high-performance Wayland widget system that renders SVG templates
 ## Features
 
 - **SVG Rendering**: Uses `librsvg` and `cairo` for crisp, vector-based visuals.
-- **JS Scripting**: Dynamic updates via an embedded JavaScript engine.
+- **JS Scripting**: Dynamic updates via a fluent JavaScript API.
 - **Interactive**: Built-in support for moving and resizing widgets via the Wayland protocol.
 - **Generic**: Run any widget by providing an SVG and a JS script.
+- **Multi-format Packaging**: Automated builds for Release Binaries, RPMs, and Flatpaks.
 
 ## Getting Started
 
@@ -29,58 +30,49 @@ Use the provided helper script to run the examples:
 
 ## JavaScript Interaction API
 
-The system looks for a global `update()` function in your JavaScript file. This function is called once per second (by default).
+The system looks for a global `update(api)` function. For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
-### The `update()` Function
-
-Your script must define:
-```javascript
-function update() {
-    // ... logic ...
-    return {
-        "element-id": 90,          // Rotates element with id="element-id" by 90 degrees
-        "text-element": "Hello!"   // Sets text content of element with id="text-element"
-    };
-}
-```
-
-### Return Value Types
-
-The `WayWidget` engine processes the returned object keys as follows:
-
-1.  **Numbers (Rotations)**:
-    - If the value is a **Number**, the engine finds the SVG element with that ID and applies a `transform="rotate(value, 50, 50)"`.
-    - *Note: The rotation center is currently fixed at 50,50 (midpoint of a 100x100 viewBox).*
-
-2.  **Strings (Text)**:
-    - If the value is a **String**, the engine finds the SVG element with that ID and replaces its inner text content with the string.
-    - This is ideal for `<text>` elements in digital clocks or status monitors.
-
-### Example: Digital Clock (`widget.js`)
+### Example: LCARS Clock (`widget.js`)
 
 ```javascript
-function update() {
+function update(api) {
     const now = new Date();
-    return {
-        "time-display": now.toLocaleTimeString(),
-        "date-display": now.toDateString()
-    };
+    api.findById("time-display").setText(now.toLocaleTimeString());
 }
 ```
 
 ## Interaction
 
 - **Move**: Left-click and drag anywhere on the widget to move it.
-- **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window. The SVG will automatically scale to fit the new dimensions while maintaining its aspect ratio defined in the `viewBox`.
+- **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window.
 
-## CLI Usage
+## Packaging & Build System
 
-```bash
-waywidget --svg <PATH_TO_SVG> --script <PATH_TO_JS> --width <WIDTH> --height <HEIGHT>
-```
+The project includes a robust packaging environment based on Podman/Docker.
 
-- `-s, --svg`: Path to the SVG template file.
-- `-j, --script`: Path to the JavaScript logic file.
-- `--updateS`: Update interval in seconds (default: 0.0, which means no automatic update).
-- `--width`: Initial window width (default: 200).
-- `--height`: Initial window height (default: 200).
+### Local Build (Binary + RPM + Flatpak)
+
+1. **Build the Toolchain Image**:
+   ```bash
+   podman build -t waywidget-toolchain .
+   ```
+
+2. **Run the Packaging Script**:
+   ```bash
+   podman run --rm \
+       --security-opt label=disable \
+       --security-opt seccomp=unconfined \
+       -v .:/build:Z \
+       waywidget-toolchain
+   ```
+   Artifacts will be available in the `./dest` directory.
+
+### Continuous Integration
+
+Every push to the `main` branch on GitHub triggers an automated build. Artifacts (Binary, RPM, Flatpak) are automatically generated and attached to the GitHub Action run.
+
+## Project Information
+
+- **URL**: https://github.com/maxfridbe/WayWidget
+- **Author**: Max Fridbe <maxfridbe@gmail.com>
+- **License**: MIT

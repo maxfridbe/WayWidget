@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        SVG-to-Cairo Wayland Widget System
 
 License:        MIT
-URL:            https://github.com/example/waywidget
+URL:            https://github.com/maxfridbe/WayWidget
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  pkgconfig
@@ -34,5 +34,5 @@ install -m 0755 waywidget/target/release/waywidget %{buildroot}%{_bindir}/waywid
 %{_bindir}/waywidget
 
 %changelog
-* Wed Mar 04 2026 Max Fridbe <maxfridbe@example.com> - 0.1.0-1
+* Wed Mar 04 2026 Max Fridbe <maxfridbe@gmail.com> - 0.1.0-1
 - Initial release
