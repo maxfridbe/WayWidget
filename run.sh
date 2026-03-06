@@ -15,9 +15,8 @@ run_example() {
     local script=$3
     local w=$4
     local h=$5
-    local u=$6
     echo "Running example: $name"
-    local cmd="./waywidget/target/debug/waywidget --svg $svg --width $w --height $h --updateS $u"
+    local cmd="./waywidget/target/debug/waywidget --svg $svg --width $w --height $h"
     if [ -n "$script" ]; then
         cmd="$cmd --script $script"
     fi
@@ -29,18 +28,18 @@ EXAMPLE=${1:-lcars}
 
 case $EXAMPLE in
     "clock")
-        run_example "Analog Clock" "examples/clock/clock.svg" "examples/clock/widget.js" 200 200 1.0
+        run_example "Analog Clock" "examples/clock/clock.svg" "examples/clock/widget.js" 200 200
         ;;
     "lcars")
-        run_example "LCARS Clock" "examples/lcars_clock/widget.svg" "examples/lcars_clock/widget.js" 600 300 1.0
+        run_example "LCARS Clock" "examples/lcars_clock/widget.svg" "examples/lcars_clock/widget.js" 600 300
         ;;
     "sunrise")
-        run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450 0.033
+        run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450
         ;;
     "lion")
-        run_example "Static Lion" "examples/lion/widget.svg" "" 200 200 0
+        run_example "Static Lion" "examples/lion/widget.svg" "" 200 200
         ;;
     *)
-        echo "Usage: ./run.sh [clock|lcars]"
+        echo "Usage: ./run.sh [clock|lcars|sunrise|lion]"
         ;;
 esac

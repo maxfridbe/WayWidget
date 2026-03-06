@@ -139,18 +139,22 @@ mod tests {
         js_context.register_global_class::<WidgetAPI>().unwrap();
         js_context.register_global_class::<ElementHandle>().unwrap();
         js_context.register_global_class::<WidgetState>().unwrap();
+        js_context.register_global_class::<crate::RefreshRequest>().unwrap();
         
         let api_proto = get_proto::<WidgetAPI>(&mut js_context);
         let state_proto = get_proto::<WidgetState>(&mut js_context);
+        let request_proto = get_proto::<crate::RefreshRequest>(&mut js_context);
         
         let shared_ops = Arc::new(Mutex::new(HashMap::new()));
         let shared_state = Arc::new(Mutex::new(HashMap::new()));
+        let refresh_delay = Arc::new(Mutex::new(None));
 
         let js_code = r#"
-            function update(api, timestamp, click, state) {
+            function update(api, timestamp, click, state, request) {
                 api.findById("rect1").setRotation(90).setOpacity(0.7);
                 api.findById("group1").appendElement("circle", { id: "dynamic_circle", r: "5" });
                 state.set("last_ts", timestamp.toString());
+                request.refreshInMS(500);
             }
         "#;
         js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
@@ -161,10 +165,13 @@ mod tests {
         let state_data = WidgetState { data: shared_state.clone() };
         let js_state = JsObject::from_proto_and_data(Some(state_proto), state_data);
 
+        let request_data = crate::RefreshRequest { delay_ms: refresh_delay.clone() };
+        let js_request = JsObject::from_proto_and_data(Some(request_proto), request_data);
+
         let update_func = js_context.global_object().get(JsString::from("update"), &mut js_context).unwrap();
         update_func.as_object().unwrap().call(
             &JsValue::undefined(),
-            &[js_api.into(), JsValue::new(12345), JsValue::undefined(), js_state.into()],
+            &[js_api.into(), JsValue::new(12345), JsValue::undefined(), js_state.into(), js_request.into()],
             &mut js_context
         ).unwrap();
 
@@ -177,5 +184,6 @@ mod tests {
 
         assert!(find_element_by_id(&mut root, "dynamic_circle").is_some());
         assert_eq!(shared_state.lock().unwrap().get("last_ts").unwrap(), "12345");
+        assert_eq!(refresh_delay.lock().unwrap().unwrap(), 500);
     }
 }

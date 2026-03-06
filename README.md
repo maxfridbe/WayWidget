@@ -24,7 +24,7 @@ Creating a widget is as simple as:
 waywidget --svg my-widget.svg
 
 # Add interactivity and logic
-waywidget --svg my-widget.svg --script logic.js --updateS 0.033
+waywidget --svg my-widget.svg --script logic.js
 ```
 
 ## CLI Usage
@@ -35,7 +35,6 @@ waywidget --svg my-widget.svg --script logic.js --updateS 0.033
 | `--script` | `-j` | Path to the JavaScript logic file | - |
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
-| `--updateS`| - | Update interval in seconds (e.g. 0.033 for 30fps). Set to `0` for static widgets. | `0.0` |
 
 ## Getting Started
 
@@ -59,23 +58,28 @@ Use the provided helper script to run the examples:
 
 ## JavaScript Interaction API
 
-The system looks for a global `update(api, timestamp, click, state)` function.
+The system looks for a global `update(api, timestamp, click, state, request)` function.
 
 - `api`: The `WidgetAPI` instance for finding elements and manipulating their attributes.
 - `timestamp`: The current time in milliseconds (useful for animations).
 - `click`: An object `{ x: number, y: number }` representing normalized coordinates (0.0 to 1.0) of the last click, or `null` if no click occurred in the last frame.
 - `state`: A persistent `WidgetState` store that survives between `update` calls.
+- `request`: A `RefreshRequest` instance used to schedule the next update.
 
 ### Example: Interactive Sunrise (`widget.js`)
 
 ```javascript
-function update(api, timestamp, click, state) {
+function update(api, timestamp, click, state, request) {
     let enabled = state.get("enabled") || "true";
 
     if (click) {
         enabled = (enabled === "true") ? "false" : "true";
         state.set("enabled", enabled);
         console.log("Animation enabled:", enabled);
+    }
+
+    if (enabled === "true") {
+        request.refreshInMS(33); // Request next update in 33ms (approx 30fps)
     }
 
     // Rich state saving with JSON
@@ -85,6 +89,12 @@ function update(api, timestamp, click, state) {
     }
 }
 ```
+
+### RefreshRequest API
+
+| Method | Description |
+|--------|-------------|
+| `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms` by the engine. |
 
 ### WidgetState API
 
@@ -119,6 +129,32 @@ For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
 - **Move**: Left-click and drag anywhere on the widget to move it.
 - **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window.
+
+## Window Manager Configuration
+
+For tiling window managers, you should configure `waywidget` to always open as a floating window.
+
+### Niri
+Add to `~/.config/niri/config.kdl`:
+```kdl
+window-rule {
+    match app-id="waywidget"
+    open-floating true
+}
+```
+
+### Sway
+Add to `~/.config/sway/config`:
+```sway
+for_window [app_id="waywidget"] floating enable, border none
+```
+
+### Hyprland
+Add to `~/.config/hypr/hyprland.conf`:
+```hypr
+windowrulev2 = float, class:(waywidget)
+windowrulev2 = pin, class:(waywidget)
+```
 
 ## Development & Testing
 

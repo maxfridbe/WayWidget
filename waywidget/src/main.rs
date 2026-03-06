@@ -46,19 +46,50 @@ use boa_engine::{
 };
 use boa_gc::{Finalize, Trace};
 
+use directories::ProjectDirs;
+use serde::{Serialize, Deserialize};
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     #[arg(short, long)]
-    svg: PathBuf,
+    svg: Option<PathBuf>,
     #[arg(short = 'j', long)]
     script: Option<PathBuf>,
     #[arg(long, default_value_t = 200)]
     width: u32,
     #[arg(long, default_value_t = 200)]
     height: u32,
-    #[arg(long = "updateS", default_value_t = 0.0)]
-    update_s: f64,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum Commands {
+    Run {
+        widget: String,
+        #[arg(short, long)]
+        name: Option<String>,
+        #[arg(long)]
+        width: Option<u32>,
+        #[arg(long)]
+        height: Option<u32>,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+struct WidgetConfig {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct Positions {
+    #[serde(flatten)]
+    widgets: HashMap<String, WidgetConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +106,30 @@ enum SvgOp {
     AppendElement { tag: String, attributes: HashMap<String, String> },
     ClearChildren,
     Remove,
+}
+
+#[derive(Clone, Trace, Finalize, JsData)]
+struct RefreshRequest {
+    #[unsafe_ignore_trace]
+    delay_ms: Arc<Mutex<Option<u32>>>,
+}
+
+impl Class for RefreshRequest {
+    const NAME: &'static str = "RefreshRequest";
+    fn data_constructor(_this: &JsValue, _args: &[JsValue], _context: &mut JsContext) -> JsResult<Self> {
+        Err(JsError::from_opaque(JsString::from("Cannot construct RefreshRequest directly").into()))
+    }
+    fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        class.method(JsString::from("refreshInMS"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let ms = args.get_or_undefined(0).as_number().unwrap_or(0.0) as u32;
+            let mut delay = request.delay_ms.lock().unwrap();
+            *delay = Some(ms.max(33));
+            Ok(JsValue::undefined())
+        }));
+        Ok(())
+    }
 }
 
 #[derive(Clone, Trace, Finalize, JsData)]
@@ -303,13 +358,16 @@ struct WayWidget {
     
     svg_root: Element,
     viewbox: (f64, f64),
+    svg_handle: Option<rsvg::SvgHandle>,
     
     js_context: JsContext,
     api_proto: JsObject,
     handle_proto: JsObject,
     state_proto: JsObject,
+    request_proto: JsObject,
     shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
     shared_state: Arc<Mutex<HashMap<String, String>>>,
+    refresh_delay: Arc<Mutex<Option<u32>>>,
     
     pointer: Option<wl_pointer::WlPointer>,
     seat: Option<wl_seat::WlSeat>,
@@ -321,6 +379,10 @@ struct WayWidget {
     width: u32,
     height: u32,
     needs_redraw: bool,
+    
+    widget_name: String,
+    positions_file: PathBuf,
+    current_config: WidgetConfig,
 }
 
 pub(crate) fn find_element_by_id<'a>(el: &'a mut Element, id: &str) -> Option<&'a mut Element> {
@@ -437,6 +499,22 @@ pub(crate) fn apply_ops_to_svg(root: &mut Element, ops: HashMap<String, Vec<SvgO
 }
 
 impl WayWidget {
+    fn save_positions(&self) {
+        let mut positions: Positions = if self.positions_file.exists() {
+            let f = fs::File::open(&self.positions_file).unwrap();
+            serde_yaml::from_reader(f).unwrap_or_default()
+        } else {
+            Positions::default()
+        };
+        let mut cfg = self.current_config.clone();
+        cfg.width = self.width;
+        cfg.height = self.height;
+        positions.widgets.insert(self.widget_name.clone(), cfg);
+        if let Ok(f) = fs::File::create(&self.positions_file) {
+            serde_yaml::to_writer(f, &positions).ok();
+        }
+    }
+
     fn draw(&mut self) {
         // 1. Get JS updates
         let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64;
@@ -453,6 +531,9 @@ impl WayWidget {
                 let state_data = WidgetState { data: self.shared_state.clone() };
                 let js_state = JsObject::from_proto_and_data(Some(self.state_proto.clone()), state_data);
 
+                let request_data = RefreshRequest { delay_ms: self.refresh_delay.clone() };
+                let js_request = JsObject::from_proto_and_data(Some(self.request_proto.clone()), request_data);
+
                 let click_val = if let Some((x, y)) = self.last_click.take() {
                     let obj = JsObject::default(self.js_context.intrinsics());
                     obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
@@ -462,21 +543,34 @@ impl WayWidget {
                     JsValue::undefined()
                 };
                 
-                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), click_val, js_state.into()], &mut self.js_context)
+                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), click_val, js_state.into(), js_request.into()], &mut self.js_context)
                     .map_err(|e| println!("JS Error in update(): {}", e))
                     .ok();
             }
         }
         
-        // 2. Apply to tree
         let ops = self.shared_ops.lock().unwrap().clone();
-        apply_ops_to_svg(&mut self.svg_root, ops);
+        let has_ops = !ops.is_empty();
 
-        // 3. Serialize tree
-        let mut out = Vec::new();
-        self.svg_root.write(&mut out).ok();
+        // 2. Apply to tree if needed
+        if has_ops {
+            apply_ops_to_svg(&mut self.svg_root, ops);
+            
+            // Re-parse tree
+            let mut out = Vec::new();
+            self.svg_root.write(&mut out).ok();
+            let bytes = glib::Bytes::from(&out);
+            let stream = MemoryInputStream::from_bytes(&bytes);
+            self.svg_handle = Some(Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data"));
+            
+            self.needs_redraw = true;
+        }
 
-        // 4. Zero-Copy Drawing
+        if !self.needs_redraw || self.svg_handle.is_none() {
+            return;
+        }
+
+        // 3. Zero-Copy Drawing
         let (buffer, canvas) = self
             .pool
             .create_buffer(
@@ -503,10 +597,7 @@ impl WayWidget {
             cr.paint().expect("paint clear");
             cr.set_operator(cairo::Operator::Over);
 
-            let bytes = glib::Bytes::from(&out);
-            let stream = MemoryInputStream::from_bytes(&bytes);
-            let handle = Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data");
-            let renderer = CairoRenderer::new(&handle);
+            let renderer = CairoRenderer::new(self.svg_handle.as_ref().unwrap());
             
             cr.save().expect("save content");
             let (vb_w, vb_h) = self.viewbox;
@@ -564,6 +655,7 @@ impl WindowHandler for WayWidget {
         if new_w != self.width || new_h != self.height {
             self.width = new_w;
             self.height = new_h;
+            self.save_positions();
         }
         self.needs_redraw = true;
         self.draw();
@@ -608,6 +700,7 @@ impl PointerHandler for WayWidget {
                                 self.window.xdg_toplevel()._move(seat, serial);
                             }
                         }
+                        self.draw();
                     }
                 }
                 _ => {}
@@ -639,8 +732,42 @@ fn get_proto<T: Class>(js_context: &mut JsContext) -> JsObject {
         .clone()
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    
+    let proj_dirs = ProjectDirs::from("org", "waywidget", "waywidget")
+        .ok_or_else(|| anyhow::anyhow!("Could not determine project directories"))?;
+    let config_dir = proj_dirs.config_dir();
+    fs::create_dir_all(config_dir).ok();
+
+    let (svg_path, script_path, width, height, widget_name) = match &args.command {
+        Some(Commands::Run { widget, name, width, height }) => {
+            let widget_dir = config_dir.join(widget);
+            let svg = widget_dir.join("widget.svg");
+            let script = widget_dir.join("widget.js");
+            let name = name.clone().unwrap_or_else(|| widget.clone());
+            (svg, Some(script), width.unwrap_or(200), height.unwrap_or(200), name)
+        }
+        None => {
+            let svg = args.svg.ok_or_else(|| anyhow::anyhow!("SVG path required if not using 'run'"))?;
+            let name = svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+            (svg, args.script, args.width, args.height, name)
+        }
+    };
+
+    let positions_file = config_dir.join("positions.yml");
+    let mut positions: Positions = if positions_file.exists() {
+        let f = fs::File::open(&positions_file)?;
+        serde_yaml::from_reader(f).unwrap_or_default()
+    } else {
+        Positions::default()
+    };
+
+    let cfg = positions.widgets.get(&widget_name).cloned().unwrap_or_default();
+    let final_width = if cfg.width > 0 { cfg.width } else { width };
+    let final_height = if cfg.height > 0 { cfg.height } else { height };
+    println!("Starting widget '{}' at position: {:?}, size: {}x{}", widget_name, cfg, final_width, final_height);
+
     let conn = Connection::connect_to_env().expect("connect to wayland");
     let (globals, event_queue) = registry_queue_init::<WayWidget>(&conn).expect("registry init");
     let qh = event_queue.handle();
@@ -661,7 +788,7 @@ fn main() {
     window.commit();
 
     let pool = SlotPool::new(1200 * 1200 * 4 * 2, &shm_state).expect("create pool");
-    let svg_template = fs::read_to_string(&args.svg).expect("read svg");
+    let svg_template = fs::read_to_string(&svg_path).expect("read svg");
     let svg_root = Element::parse(svg_template.as_bytes()).expect("parse svg");
     let viewbox_str = svg_root.attributes.get("viewBox").cloned().unwrap_or("0 0 100 100".to_string());
     let parts: Vec<f64> = viewbox_str.split_whitespace().filter_map(|s| s.parse().ok()).collect();
@@ -683,16 +810,19 @@ fn main() {
     js_context.register_global_class::<WidgetAPI>().unwrap();
     js_context.register_global_class::<ElementHandle>().unwrap();
     js_context.register_global_class::<WidgetState>().unwrap();
+    js_context.register_global_class::<RefreshRequest>().unwrap();
     
     let api_proto = get_proto::<WidgetAPI>(&mut js_context);
     let handle_proto = get_proto::<ElementHandle>(&mut js_context);
     let state_proto = get_proto::<WidgetState>(&mut js_context);
+    let request_proto = get_proto::<RefreshRequest>(&mut js_context);
     
     let shared_ops = Arc::new(Mutex::new(HashMap::new()));
     let shared_state = Arc::new(Mutex::new(HashMap::new()));
+    let refresh_delay = Arc::new(Mutex::new(None));
 
-    if let Some(script_path) = &args.script {
-        let js_source = fs::read_to_string(script_path).expect("read script");
+    if let Some(path) = &script_path {
+        let js_source = fs::read_to_string(path).expect("read script");
         js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script");
     }
 
@@ -700,30 +830,44 @@ fn main() {
         registry_state, seat_state, output_state,
         _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state,
         window, pool, qh: qh.clone(),
-        svg_root, viewbox,
-        js_context, api_proto, handle_proto, state_proto, shared_ops, shared_state,
+        svg_root, viewbox, svg_handle: None,
+        js_context, api_proto, handle_proto, state_proto, request_proto, 
+        shared_ops, shared_state, refresh_delay: refresh_delay.clone(),
         pointer: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
-        exit: false, width: args.width, height: args.height, needs_redraw: true,
+        exit: false, width: final_width, height: final_height, needs_redraw: true,
+        widget_name, positions_file: positions_file.clone(),
+        current_config: cfg,
     };
 
     let mut event_loop: EventLoop<WayWidget> = EventLoop::try_new().expect("create event loop");
     let handle = event_loop.handle();
     WaylandSource::new(conn, event_queue).insert(handle.clone()).expect("insert wayland source");
 
-    if args.update_s > 0.0 {
-        let update_duration = Duration::from_secs_f64(args.update_s);
-        let timer = Timer::from_duration(update_duration);
-        handle.insert_source(timer, move |_, _, app| {
+    let timer = Timer::from_duration(Duration::from_millis(10));
+    handle.insert_source(timer, move |_, _, app| {
+        let delay = {
+            let mut lock = app.refresh_delay.lock().unwrap();
+            lock.take()
+        };
+
+        if let Some(ms) = delay {
             app.needs_redraw = true;
             let surface = app.window.wl_surface().clone();
             surface.frame(&app.qh, surface.clone());
             app.window.wl_surface().commit();
-            TimeoutAction::ToDuration(update_duration)
-        }).expect("insert timer");
-    }
+            TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
+        } else {
+            if app.needs_redraw {
+                app.draw();
+            }
+            TimeoutAction::ToDuration(Duration::from_millis(200))
+        }
+    }).expect("insert timer");
 
     while !app.exit {
         event_loop.dispatch(Duration::from_millis(10), &mut app).expect("dispatch");
     }
+
+    Ok(())
 }
 mod tests;

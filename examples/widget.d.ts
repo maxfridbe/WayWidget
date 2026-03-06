@@ -133,11 +133,24 @@ interface WidgetState {
 }
 
 /**
+ * Interface to request the next refresh cycle.
+ */
+interface RefreshRequest {
+    /**
+     * Requests a refresh in X milliseconds.
+     * Clamped to a minimum of 33ms by the engine.
+     * @param ms Delay in milliseconds.
+     */
+    refreshInMS(ms: number): void;
+}
+
+/**
  * The main entry point for widget logic.
  * This function is called on every update cycle.
  * @param api The WidgetAPI instance for manipulation.
  * @param timestamp Current time in milliseconds.
  * @param click Normalized coordinates of the last click (0-1), or undefined.
  * @param state Persistent state object for the widget.
+ * @param request Interface to request the next refresh cycle.
  */
-declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, state?: WidgetState): void;
+declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, state?: WidgetState, request?: RefreshRequest): void;

@@ -13,7 +13,7 @@ function interpolateColor(color1, color2, factor) {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function update(api, timestamp, click, state) {
+function update(api, timestamp, click, state, request) {
     // 1. Handle Click Interactivity (Toggle Pause)
     let enabled = state.get("enabled");
     if (enabled === "") { // Initial state
@@ -25,6 +25,10 @@ function update(api, timestamp, click, state) {
         enabled = (enabled === "true") ? "false" : "true";
         state.set("enabled", enabled);
         console.log("Sunrise animation enabled:", enabled);
+    }
+
+    if (request && enabled === "true") {
+        request.refreshInMS(33); // Smooth 30fps animation
     }
 
     // 2. Logic: If paused, use a stored 'pause_time' or just freeze the frame
