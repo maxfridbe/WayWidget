@@ -526,6 +526,7 @@ pub struct WayWidget {
     pub width: u32,
     pub height: u32,
     pub needs_redraw: bool,
+    pub last_svg_hash: u64,
     pub last_js_update: f64,
     
     pub widget_name: String,
@@ -677,12 +678,23 @@ impl WayWidget {
 
         if has_ops || self.svg_handle.is_none() {
             if has_ops { apply_ops_to_svg(&mut self.svg_root, ops); }
+            
             let mut out = Vec::new();
             self.svg_root.write(&mut out).ok();
-            let bytes = glib::Bytes::from(&out);
-            let stream = MemoryInputStream::from_bytes(&bytes);
-            self.svg_handle = Some(Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data"));
-            self.needs_redraw = true;
+            
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            out.hash(&mut hasher);
+            let current_hash = hasher.finish();
+
+            if current_hash != self.last_svg_hash || self.svg_handle.is_none() {
+                let bytes = glib::Bytes::from(&out);
+                let stream = MemoryInputStream::from_bytes(&bytes);
+                self.svg_handle = Some(Loader::new().read_stream(&stream, None as Option<&gio::File>, None as Option<&gio::Cancellable>).expect("load svg data"));
+                self.last_svg_hash = current_hash;
+                self.needs_redraw = true;
+            }
         }
 
         if !self.needs_redraw { return; }
@@ -1055,7 +1067,7 @@ fn main() -> anyhow::Result<()> {
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
-        exit: false, width: final_width, height: final_height, needs_redraw: true, last_js_update: 0.0,
+        exit: false, width: final_width, height: final_height, needs_redraw: true, last_svg_hash: 0, last_js_update: 0.0,
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, socket_path, current_config: cfg,
     };
 
@@ -1066,24 +1078,24 @@ fn main() -> anyhow::Result<()> {
     let timer = Timer::from_duration(Duration::from_millis(10));
     handle.insert_source(timer, move |_, _, app| {
         let delay = { let mut lock = app.refresh_delay.lock().unwrap(); lock.take() };
-        if let Some(ms) = delay {
-            app.needs_redraw = true;
-            let surface = app.window.wl_surface().clone();
-            surface.frame(&app.qh, surface.clone());
-            app.window.wl_surface().commit();
-            TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
-        } else {
-            // Check if we HAVE to update (async responses or events)
-            let has_async = !app.http_responses.lock().unwrap().is_empty() || 
-                            !app.cli_responses.lock().unwrap().is_empty() ||
-                            !app.message_queue.lock().unwrap().is_empty() ||
-                            !app.keys_pressed.lock().unwrap().is_empty() ||
-                            app.last_click.is_some();
+        
+        // 1. Check if an async event or input occurred
+        let has_async = !app.http_responses.lock().unwrap().is_empty() || 
+                        !app.cli_responses.lock().unwrap().is_empty() ||
+                        !app.message_queue.lock().unwrap().is_empty() ||
+                        !app.keys_pressed.lock().unwrap().is_empty() ||
+                        app.last_click.is_some();
 
-            if has_async {
-                app.draw();
-            }
-            
+        if let Some(ms) = delay {
+            // Widget requested a timed update
+            app.draw();
+            TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
+        } else if has_async {
+            // Background event occurred, update immediately
+            app.draw();
+            TimeoutAction::ToDuration(Duration::from_millis(100))
+        } else {
+            // Truly idle, check again in 100ms
             TimeoutAction::ToDuration(Duration::from_millis(100))
         }
     }).expect("insert timer");
