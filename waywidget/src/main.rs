@@ -526,6 +526,7 @@ pub struct WayWidget {
     pub width: u32,
     pub height: u32,
     pub needs_redraw: bool,
+    pub last_js_update: f64,
     
     pub widget_name: String,
     pub positions_file: PathBuf,
@@ -684,7 +685,7 @@ impl WayWidget {
             self.needs_redraw = true;
         }
 
-        if !self.needs_redraw || self.svg_handle.is_none() { return; }
+        if !self.needs_redraw { return; }
 
         let (buffer, canvas) = self.pool.create_buffer(self.width as i32, self.height as i32, self.width as i32 * 4, wl_shm::Format::Argb8888).expect("create buffer");
         unsafe {
@@ -1054,7 +1055,7 @@ fn main() -> anyhow::Result<()> {
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
-        exit: false, width: final_width, height: final_height, needs_redraw: true,
+        exit: false, width: final_width, height: final_height, needs_redraw: true, last_js_update: 0.0,
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, socket_path, current_config: cfg,
     };
 
@@ -1072,8 +1073,17 @@ fn main() -> anyhow::Result<()> {
             app.window.wl_surface().commit();
             TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
         } else {
-            // Force a draw/update cycle to catch background HTTP responses
-            app.draw();
+            // Check if we HAVE to update (async responses or events)
+            let has_async = !app.http_responses.lock().unwrap().is_empty() || 
+                            !app.cli_responses.lock().unwrap().is_empty() ||
+                            !app.message_queue.lock().unwrap().is_empty() ||
+                            !app.keys_pressed.lock().unwrap().is_empty() ||
+                            app.last_click.is_some();
+
+            if has_async {
+                app.draw();
+            }
+            
             TimeoutAction::ToDuration(Duration::from_millis(100))
         }
     }).expect("insert timer");
