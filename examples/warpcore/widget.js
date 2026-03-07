@@ -59,7 +59,11 @@ function update(api, timestamp, response, state, request) {
     }
 
     // 4. Update Intermix Chamber
-    const chamberPulse = getPulse(progress, 0.7);
-    const chamberOpacity = 0.5 + (chamberPulse * 0.5);
-    api.findById("chamber").setOpacity(chamberOpacity);
+    // Chamber itself stays solid
+    api.findById("chamber").setOpacity(1.0);
+    
+    // Only the very center circle pulsates
+    const corePulse = getPulse(progress, 0.7);
+    const coreOpacity = 0.4 + (corePulse * 0.6);
+    api.findById("pulsating-core").setOpacity(coreOpacity);
 }

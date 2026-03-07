@@ -15,7 +15,7 @@
         <!-- Main Reactor Chamber -->
         <g id="chamber">
             <rect x="15" y="112" width="60" height="24" rx="10" fill="#cc9933" />
-            <circle cx="45" cy="124" r="6" fill="#ffffcc" />
+            <circle id="pulsating-core" cx="45" cy="124" r="6" fill="#ffffcc" />
         </g>
         
         <!-- Bottom Segments -->
