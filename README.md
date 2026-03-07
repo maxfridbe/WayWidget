@@ -93,7 +93,7 @@ The system looks for a global `update(api, timestamp, response, state, request)`
 - `api`: The `WidgetAPI` instance for finding elements and manipulating their attributes.
 - `timestamp`: The current time in milliseconds (useful for animations).
 - `response`: An object containing events and data from the engine:
-    - `click`: `{ x: number, y: number }` normalized coordinates, or `null`.
+    - `click`: `{ x: number, y: number, id?: string }` normalized coordinates and the `id` of the SVG element at the click location, or `null`.
     - `keyboard`: `string[]` of keys pressed (prefixed with `+`) or released (`-`).
     - `http`: `Record<string, { status: number, body: string, error?: string }>` containing async HTTP results.
     - `cli`: `Record<string, { output: string, error?: string }>` containing async CLI results.
