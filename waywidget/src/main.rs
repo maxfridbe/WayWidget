@@ -483,6 +483,7 @@ pub struct WayWidget {
     pub seat: Option<wl_seat::WlSeat>,
     pub pointer_pos: (f64, f64),
     pub last_click: Option<(f64, f64)>,
+    pub clicked_id: Option<String>,
     pub is_hovering: bool,
     
     pub exit: bool,
@@ -522,6 +523,28 @@ impl WayWidget {
         process_cli_queue(c_calls, self.cli_responses.clone());
     }
 
+    fn find_clicked_id(&self, px: f64, py: f64) -> Option<String> {
+        let handle = self.svg_handle.as_ref()?;
+        let renderer = CairoRenderer::new(handle);
+        let vx = px * (self.viewbox.0 / self.width as f64);
+        let vy = py * (self.viewbox.1 / self.height as f64);
+        let rect = cairo::Rectangle::new(0.0, 0.0, self.viewbox.0, self.viewbox.1);
+
+        let mut all_ids = Vec::new();
+        svg::extract_all_ids(&self.svg_root, &mut all_ids);
+
+        // Iterate in reverse (top elements first)
+        for id in all_ids.into_iter().rev() {
+            if let Ok((_ink_rect, logical_rect)) = renderer.geometry_for_layer(Some(&format!("#{}", id)), &rect) {
+                if vx >= logical_rect.x() && vx <= logical_rect.x() + logical_rect.width() &&
+                   vy >= logical_rect.y() && vy <= logical_rect.y() + logical_rect.height() {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
     pub fn draw(&mut self) {
         // 1. Process Queues
         self.process_queues();
@@ -553,11 +576,15 @@ impl WayWidget {
                 // Build Response Object
                 let js_response = JsObject::default(self.js_context.intrinsics());
                 
+                let clicked_id_val = self.clicked_id.take();
                 let click_val = if let Some((x, y)) = self.last_click.take() {
                     if *self.capture_clicks.lock().unwrap() {
                         let obj = JsObject::default(self.js_context.intrinsics());
                         obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
                         obj.set(JsString::from("y"), JsValue::new(y), true, &mut self.js_context).ok();
+                        if let Some(id) = clicked_id_val {
+                            obj.set(JsString::from("id"), JsString::from(id), true, &mut self.js_context).ok();
+                        }
                         obj.into()
                     } else { JsValue::undefined() }
                 } else { JsValue::undefined() };
@@ -698,6 +725,7 @@ impl PointerHandler for WayWidget {
                     if button == 0x110 {
                         let (px, py) = self.pointer_pos;
                         self.last_click = Some((px / self.width as f64, py / self.height as f64));
+                        self.clicked_id = self.find_clicked_id(px, py);
                         self.needs_redraw = true;
                         if let Some(seat) = &self.seat {
                             if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 { self.window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight); }
@@ -824,7 +852,7 @@ fn main() -> anyhow::Result<()> {
         js_context, api_proto, handle_proto, state_proto, request_proto, 
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), keys_pressed: keys_pressed.clone(),
         http_queue, http_responses, cli_queue, cli_responses,
-        pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
+        pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         exit: false, width: final_width, height: final_height, needs_redraw: true,
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, current_config: cfg,
     };

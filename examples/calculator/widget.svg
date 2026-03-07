@@ -1,14 +1,16 @@
-<svg viewBox="0 0 250 350" xmlns="http://www.w3.org/2000/svg" id="svg-root">
+<svg viewBox="0 0 250 380" xmlns="http://www.w3.org/2000/svg" id="svg-root">
     <!-- Main Background Wrapper -->
-    <rect x="5" y="5" width="240" height="340" rx="20" fill="#1e1e2e" fill-opacity="0.8" />
+    <rect x="5" y="5" width="240" height="370" rx="20" fill="#1e1e2e" fill-opacity="0.8" />
 
-    <!-- Display Pill -->
-    <rect x="15" y="15" width="220" height="50" rx="15" fill="#11111b" fill-opacity="0.6" />
-    <text id="display" x="225" y="50" text-anchor="end" fill="#cdd6f4" font-family="monospace" font-size="28" font-weight="bold">0</text>
-    <text id="sub-display" x="225" y="30" text-anchor="end" fill="#585b70" font-family="monospace" font-size="12"> </text>
+    <!-- Display Pill - Increased height to prevent overlapping -->
+    <rect x="15" y="15" width="220" height="70" rx="15" fill="#11111b" fill-opacity="0.6" />
+    <!-- Sub-display (Entry text): Brighter (#a6adc8), larger (14px), and moved up -->
+    <text id="sub-display" x="225" y="38" text-anchor="end" fill="#a6adc8" font-family="monospace" font-size="14"> </text>
+    <!-- Display (Result): Main focus, moved down -->
+    <text id="display" x="225" y="72" text-anchor="end" fill="#cdd6f4" font-family="monospace" font-size="32" font-weight="bold">0</text>
 
-    <!-- Buttons Grid -->
-    <g transform="translate(15, 80)">
+    <!-- Buttons Grid - Shifted down to accommodate larger display -->
+    <g transform="translate(15, 100)">
         <!-- Row 1: C, ( ), / -->
         <g id="btn-C" transform="translate(0, 0)">
             <rect width="50" height="45" rx="12" fill="#f38ba8" fill-opacity="0.3" />

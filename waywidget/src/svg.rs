@@ -55,6 +55,17 @@ pub fn remove_element_by_id(el: &mut Element, id: &str) -> bool {
     false
 }
 
+pub fn extract_all_ids(el: &Element, ids: &mut Vec<String>) {
+    if let Some(id) = el.attributes.get("id") {
+        ids.push(id.clone());
+    }
+    for child in &el.children {
+        if let Some(child_el) = child.as_element() {
+            extract_all_ids(child_el, ids);
+        }
+    }
+}
+
 pub fn apply_ops_to_svg(root: &mut Element, ops: HashMap<String, Vec<SvgOp>>) {
     for (id, el_ops) in ops {
         let mut should_remove = false;
