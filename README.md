@@ -29,10 +29,27 @@ waywidget --svg my-widget.svg --script logic.js
 
 ## CLI Usage
 
+### Direct Run
+Point the engine at specific SVG and JS files.
+
 | Parameter | Shorthand | Description | Default |
 |-----------|-----------|-------------|---------|
-| `--svg` | `-s` | Path to the SVG template file (Required) | - |
+| `--svg` | `-s` | Path to the SVG template file | - |
 | `--script` | `-j` | Path to the JavaScript logic file | - |
+| `--width` | - | Initial window width | `200` |
+| `--height` | - | Initial window height | `200` |
+
+### Subcommand: `run`
+Loads a widget by convention from `~/.config/waywidget/<name>/`.
+Expects `widget.svg` and `widget.js` to exist in that directory.
+
+```bash
+waywidget run <widget_name> [OPTIONS]
+```
+
+| Parameter | Shorthand | Description | Default |
+|-----------|-----------|-------------|---------|
+| `--name` | `-n` | Custom instance name (for persistent config) | `<widget_name>` |
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
 
