@@ -174,7 +174,12 @@ The project includes a robust packaging environment based on Podman/Docker.
 
 ### Local Build (Binary + RPM + Flatpak)
 
-1. **Build the Toolchain Image**:
+You can use the provided automation script:
+```bash
+./docker-build.sh
+```
+
+Or run the steps manually:
    ```bash
    podman build -t waywidget-toolchain .
    ```
