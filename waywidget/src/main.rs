@@ -136,6 +136,8 @@ struct RefreshRequest {
     #[unsafe_ignore_trace]
     incoming_messages: Arc<Mutex<bool>>,
     #[unsafe_ignore_trace]
+    exit_trigger: Arc<Mutex<Option<String>>>,
+    #[unsafe_ignore_trace]
     http_queue: Arc<Mutex<Vec<HttpCall>>>,
     #[unsafe_ignore_trace]
     cli_queue: Arc<Mutex<Vec<CliCall>>>,
@@ -227,6 +229,14 @@ impl Class for RefreshRequest {
             let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
             let command = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             request.cli_queue.lock().unwrap().push(CliCall { command });
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("Close"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let msg = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let mut trigger = request.exit_trigger.lock().unwrap();
+            *trigger = Some(msg);
             Ok(JsValue::undefined())
         }));
         Ok(())
@@ -488,6 +498,7 @@ pub struct WayWidget {
     pub capture_keyboard: Arc<Mutex<bool>>,
     pub capture_clicks: Arc<Mutex<bool>>,
     pub incoming_messages: Arc<Mutex<bool>>,
+    pub exit_trigger: Arc<Mutex<Option<String>>>,
     pub keys_pressed: Arc<Mutex<Vec<String>>>,
     pub message_queue: Arc<Mutex<Vec<String>>>,
     
@@ -597,6 +608,7 @@ impl WayWidget {
                     capture_keyboard: self.capture_keyboard.clone(),
                     capture_clicks: self.capture_clicks.clone(),
                     incoming_messages: self.incoming_messages.clone(),
+                    exit_trigger: self.exit_trigger.clone(),
                     http_queue: self.http_queue.clone(),
                     cli_queue: self.cli_queue.clone(),
                 };
@@ -701,6 +713,13 @@ impl WayWidget {
         self.window.wl_surface().damage_buffer(0, 0, self.width as i32, self.height as i32);
         self.window.wl_surface().commit();
         self.needs_redraw = false;
+
+        if let Some(msg) = self.exit_trigger.lock().unwrap().take() {
+            if !msg.is_empty() {
+                println!("Widget '{}' closing with message: {}", self.widget_name, msg);
+            }
+            self.exit = true;
+        }
     }
 }
 
@@ -947,6 +966,7 @@ fn main() -> anyhow::Result<()> {
 
     let message_queue = Arc::new(Mutex::new(Vec::new()));
     let incoming_messages = Arc::new(Mutex::new(false));
+    let exit_trigger = Arc::new(Mutex::new(None));
 
     let listener_queue = message_queue.clone();
     let listener_path = socket_path.clone();
@@ -1028,7 +1048,7 @@ fn main() -> anyhow::Result<()> {
         registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state, _layer_shell_state: layer_shell_state,
         window, pool, qh: qh.clone(), svg_root, viewbox, svg_handle: None,
         js_context, api_proto, handle_proto, state_proto, request_proto, 
-        shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), incoming_messages: incoming_messages.clone(), keys_pressed: keys_pressed.clone(), message_queue: message_queue.clone(),
+        shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), incoming_messages: incoming_messages.clone(), exit_trigger: exit_trigger.clone(), keys_pressed: keys_pressed.clone(), message_queue: message_queue.clone(),
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),

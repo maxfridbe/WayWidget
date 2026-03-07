@@ -155,6 +155,7 @@ function update(api, timestamp, response, state, request) {
 |--------|-------------|
 | `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms`. |
 | `incomingMessages(bool)` | Enables or disables IPC message capture for the next frame. |
+| `Close(message)` | Programmatically closes the widget and prints the message to stdout. |
 | `localKeyboardEvents()` | Enables keyboard event capture for the next frame. |
 | `localClickEvents()` | Enables mouse click capture for the next frame. |
 | `jsonHttpGet(url, headers?)` | Triggers an asynchronous JSON GET request. |
