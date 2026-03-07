@@ -64,6 +64,22 @@ Stops a running widget instance by its name.
 waywidget stop --name <instance_name>
 ```
 
+### Subcommand: `message`
+Sends a string message to a running widget instance. If `--message` is not provided, it reads from `stdin`.
+
+```bash
+# Send a direct string
+waywidget message --name my-widget --message "Hello!"
+
+# Pipe from another command
+cat status.txt | waywidget message --name my-widget
+```
+
+| Parameter | Shorthand | Description |
+|-----------|-----------|-------------|
+| `--name` | `-n` | Target widget instance name |
+| `--message` | `-m` | Message string to send (optional, defaults to stdin) |
+
 ## Getting Started
 
 ### Prerequisites
@@ -99,6 +115,7 @@ The system looks for a global `update(api, timestamp, response, state, request)`
 - `response`: An object containing events and data from the engine:
     - `click`: `{ x: number, y: number, id?: string }` normalized coordinates and the `id` of the SVG element at the click location, or `null`.
     - `keyboard`: `string[]` of keys pressed (prefixed with `+`) or released (`-`).
+    - `messages`: `string[]` of incoming IPC messages (enabled via `incomingMessages(true)`).
     - `http`: `Record<string, { status: number, body: string, error?: string }>` containing async HTTP results.
     - `cli`: `Record<string, { output: string, error?: string }>` containing async CLI results.
 - `state`: A persistent `WidgetState` store that survives between `update` calls.
@@ -137,6 +154,7 @@ function update(api, timestamp, response, state, request) {
 | Method | Description |
 |--------|-------------|
 | `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms`. |
+| `incomingMessages(bool)` | Enables or disables IPC message capture for the next frame. |
 | `localKeyboardEvents()` | Enables keyboard event capture for the next frame. |
 | `localClickEvents()` | Enables mouse click capture for the next frame. |
 | `jsonHttpGet(url, headers?)` | Triggers an asynchronous JSON GET request. |

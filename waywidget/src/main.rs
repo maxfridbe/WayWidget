@@ -100,6 +100,12 @@ enum Commands {
     Stop {
         #[arg(short, long)]
         name: String,
+    },
+    Message {
+        #[arg(short, long)]
+        name: String,
+        #[arg(short, long)]
+        message: Option<String>,
     }
 }
 
@@ -127,6 +133,8 @@ struct RefreshRequest {
     capture_keyboard: Arc<Mutex<bool>>,
     #[unsafe_ignore_trace]
     capture_clicks: Arc<Mutex<bool>>,
+    #[unsafe_ignore_trace]
+    incoming_messages: Arc<Mutex<bool>>,
     #[unsafe_ignore_trace]
     http_queue: Arc<Mutex<Vec<HttpCall>>>,
     #[unsafe_ignore_trace]
@@ -173,6 +181,14 @@ impl Class for RefreshRequest {
             let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
             let mut capture = request.capture_clicks.lock().unwrap();
             *capture = true;
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("incomingMessages"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let enabled = args.get_or_undefined(0).as_boolean().unwrap_or(false);
+            let mut incoming = request.incoming_messages.lock().unwrap();
+            *incoming = enabled;
             Ok(JsValue::undefined())
         }));
         class.method(JsString::from("jsonHttpGet"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
@@ -471,7 +487,9 @@ pub struct WayWidget {
     pub refresh_delay: Arc<Mutex<Option<u32>>>,
     pub capture_keyboard: Arc<Mutex<bool>>,
     pub capture_clicks: Arc<Mutex<bool>>,
+    pub incoming_messages: Arc<Mutex<bool>>,
     pub keys_pressed: Arc<Mutex<Vec<String>>>,
+    pub message_queue: Arc<Mutex<Vec<String>>>,
     
     pub http_queue: Arc<Mutex<Vec<HttpCall>>>,
     pub http_responses: Arc<Mutex<HashMap<String, HttpResult>>>,
@@ -502,6 +520,7 @@ pub struct WayWidget {
     pub positions_file: PathBuf,
     pub states_file: PathBuf,
     pub pid_file: PathBuf,
+    pub socket_path: PathBuf,
     pub current_config: WidgetConfig,
 }
 
@@ -577,6 +596,7 @@ impl WayWidget {
                     delay_ms: self.refresh_delay.clone(),
                     capture_keyboard: self.capture_keyboard.clone(),
                     capture_clicks: self.capture_clicks.clone(),
+                    incoming_messages: self.incoming_messages.clone(),
                     http_queue: self.http_queue.clone(),
                     cli_queue: self.cli_queue.clone(),
                 };
@@ -603,6 +623,15 @@ impl WayWidget {
                 let js_keyboard = boa_engine::object::builtins::JsArray::new(&mut self.js_context);
                 for key in keys_vec.drain(..) { js_keyboard.push(JsString::from(key), &mut self.js_context).ok(); }
                 js_response.set(JsString::from("keyboard"), JsValue::from(js_keyboard), true, &mut self.js_context).ok();
+
+                let js_messages = boa_engine::object::builtins::JsArray::new(&mut self.js_context);
+                if *self.incoming_messages.lock().unwrap() {
+                    let mut msg_queue = self.message_queue.lock().unwrap();
+                    for msg in msg_queue.drain(..) {
+                        js_messages.push(JsString::from(msg), &mut self.js_context).ok();
+                    }
+                }
+                js_response.set(JsString::from("messages"), JsValue::from(js_messages), true, &mut self.js_context).ok();
 
                 let js_cli = JsObject::default(self.js_context.intrinsics());
                 let c_responses = self.cli_responses.lock().unwrap();
@@ -675,7 +704,12 @@ impl WayWidget {
     }
 }
 
-impl Drop for WayWidget { fn drop(&mut self) { fs::remove_file(&self.pid_file).ok(); } }
+impl Drop for WayWidget { 
+    fn drop(&mut self) { 
+        fs::remove_file(&self.pid_file).ok(); 
+        fs::remove_file(&self.socket_path).ok();
+    } 
+}
 
 impl CompositorHandler for WayWidget {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
@@ -848,6 +882,28 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if let Some(Commands::Message { name, message }) = &args.command {
+        let sockets_dir = config_dir.join("sockets");
+        let socket_path = sockets_dir.join(format!("{}.sock", name));
+        if !socket_path.exists() { println!("No instance named '{}' found or it doesn't support messages.", name); return Ok(()); }
+        
+        let msg_to_send = if let Some(m) = message { m.clone() } else {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        };
+
+        use std::os::unix::net::UnixStream;
+        use std::io::Write;
+        if let Ok(mut stream) = UnixStream::connect(socket_path) {
+            stream.write_all(msg_to_send.as_bytes())?;
+        } else {
+            println!("Could not connect to widget '{}'.", name);
+        }
+        return Ok(());
+    }
+
     let (svg_path, script_path, width, height, widget_name, cli_pos, mut desktop) = match &args.command {
         Some(Commands::Run { widget, name, width, height, position, desktop }) => {
             let widget_dir = config_dir.join(widget);
@@ -884,6 +940,30 @@ fn main() -> anyhow::Result<()> {
 
     let pid_file = pids_dir.join(format!("{}.pid", widget_name));
     fs::write(&pid_file, std::process::id().to_string()).ok();
+
+    let sockets_dir = config_dir.join("sockets"); fs::create_dir_all(&sockets_dir).ok();
+    let socket_path = sockets_dir.join(format!("{}.sock", widget_name));
+    if socket_path.exists() { fs::remove_file(&socket_path).ok(); }
+
+    let message_queue = Arc::new(Mutex::new(Vec::new()));
+    let incoming_messages = Arc::new(Mutex::new(false));
+
+    let listener_queue = message_queue.clone();
+    let listener_path = socket_path.clone();
+    std::thread::spawn(move || {
+        use std::os::unix::net::UnixListener;
+        use std::io::Read;
+        if let Ok(listener) = UnixListener::bind(&listener_path) {
+            for stream in listener.incoming() {
+                if let Ok(mut stream) = stream {
+                    let mut buffer = String::new();
+                    if stream.read_to_string(&mut buffer).is_ok() {
+                        listener_queue.lock().unwrap().push(buffer);
+                    }
+                }
+            }
+        }
+    });
 
     let conn = Connection::connect_to_env().expect("connect to wayland");
     let (globals, event_queue) = registry_queue_init::<WayWidget>(&conn).expect("registry init");
@@ -948,12 +1028,12 @@ fn main() -> anyhow::Result<()> {
         registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state, _layer_shell_state: layer_shell_state,
         window, pool, qh: qh.clone(), svg_root, viewbox, svg_handle: None,
         js_context, api_proto, handle_proto, state_proto, request_proto, 
-        shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), keys_pressed: keys_pressed.clone(),
+        shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), incoming_messages: incoming_messages.clone(), keys_pressed: keys_pressed.clone(), message_queue: message_queue.clone(),
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
         exit: false, width: final_width, height: final_height, needs_redraw: true,
-        widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, current_config: cfg,
+        widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, socket_path, current_config: cfg,
     };
 
     let mut event_loop: EventLoop<WayWidget> = EventLoop::try_new().expect("create event loop");
