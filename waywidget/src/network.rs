@@ -30,14 +30,14 @@ pub fn process_http_queue(calls: Vec<HttpCall>, responses: Arc<Mutex<HashMap<Str
             
             let result = match &call.method {
                 HttpMethod::Get => {
-                    let mut rb = agent.get(&call.url);
+                    let mut rb = agent.get(&call.url).header("User-Agent", "WayWidget/1.0");
                     for (k, v) in &call.headers {
                         rb = rb.header(k, v);
                     }
                     rb.call()
                 }
                 HttpMethod::Post(body) => {
-                    let mut rb = agent.post(&call.url);
+                    let mut rb = agent.post(&call.url).header("User-Agent", "WayWidget/1.0");
                     for (k, v) in &call.headers {
                         rb = rb.header(k, v);
                     }

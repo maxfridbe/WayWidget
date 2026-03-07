@@ -49,8 +49,15 @@ case $EXAMPLE in
         $BINARY --svg examples/warpcore/widget.svg --script examples/warpcore/widget.js --width 150 --height 400 --position 1550,450 &
         PID6=$!
 
-        trap "kill $PID1 $PID2 $PID3 $PID4 $PID5 $PID6; exit" INT TERM
+        # Weather
+        $BINARY --svg examples/weather/widget.svg --script examples/weather/widget.js --width 700 --height 220 --position 700,800 &
+        PID7=$!
+
+        trap "kill $PID1 $PID2 $PID3 $PID4 $PID5 $PID6 $PID7; exit" INT TERM
         wait
+        ;;
+    "weather")
+        run_example "Weather Forecast" "examples/weather/widget.svg" "examples/weather/widget.js" 700 220
         ;;
     "clock")
         run_example "Analog Clock" "examples/clock/clock.svg" "examples/clock/widget.js" 200 200

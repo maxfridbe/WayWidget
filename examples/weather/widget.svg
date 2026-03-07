@@ -1,0 +1,86 @@
+<svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg" id="svg-root">
+    <defs>
+        <!-- Sun -->
+        <symbol id="icon-clear" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="5" fill="#fadb14" />
+            <g stroke="#fadb14" stroke-width="2" stroke-linecap="round">
+                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </g>
+        </symbol>
+        <!-- Cloudy -->
+        <symbol id="icon-cloudy" viewBox="0 0 24 24">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="#f0f0f0" />
+        </symbol>
+        <!-- Rain -->
+        <symbol id="icon-rain" viewBox="0 0 24 24">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="#a6adc8" />
+            <g stroke="#89b4fa" stroke-width="2" stroke-linecap="round">
+                <line x1="8" y1="22" x2="8" y2="24" /><line x1="12" y1="22" x2="12" y2="24" /><line x1="16" y1="22" x2="16" y2="24" />
+            </g>
+        </symbol>
+        <!-- Snow -->
+        <symbol id="icon-snow" viewBox="0 0 24 24">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="#ffffff" />
+            <circle cx="8" cy="22" r="1" fill="#89dceb" /><circle cx="12" cy="23" r="1" fill="#89dceb" /><circle cx="16" cy="22" r="1" fill="#89dceb" />
+        </symbol>
+        <!-- Storm -->
+        <symbol id="icon-storm" viewBox="0 0 24 24">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="#45475a" />
+            <path d="M13 22l-2 3h3l-2 3" stroke="#f9e2af" stroke-width="2" fill="none" />
+        </symbol>
+    </defs>
+
+    <!-- Top Header Pill (Borderless) -->
+    <rect x="10" y="5" width="660" height="25" rx="12" fill="#11111b" fill-opacity="0.6" />
+    <text id="location-label" x="340" y="21" text-anchor="middle" fill="#fab387" font-family="sans-serif" font-size="11" font-weight="bold">Loading...</text>
+    <text id="status" x="660" y="21" text-anchor="end" fill="#585b70" font-family="monospace" font-size="8">Initializing...</text>
+
+    <!-- Individual Day Pills (Borderless) -->
+    <g id="forecast-grid" transform="translate(10, 40)">
+        <g transform="translate(0, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-0" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-0" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-0" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(95, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-1" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-1" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-1" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(190, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-2" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-2" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-2" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(285, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-3" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-3" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-3" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(380, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-4" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-4" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-4" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(475, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-5" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-5" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-5" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+        <g transform="translate(570, 0)">
+            <rect width="85" height="100" rx="15" fill="#11111b" fill-opacity="0.4" />
+            <text id="day-name-6" x="42.5" y="20" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="12" font-weight="bold">--</text>
+            <use id="icon-6" href="#icon-clear" x="22.5" y="25" width="40" height="40" />
+            <text id="temp-6" x="42.5" y="85" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="14" font-weight="bold">--°</text>
+        </g>
+    </g>
+</svg>

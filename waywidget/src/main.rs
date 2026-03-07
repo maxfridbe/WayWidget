@@ -514,13 +514,17 @@ impl WayWidget {
         }
     }
 
-    pub fn draw(&mut self) {
-        // 1. Process Queues
+    fn process_queues(&mut self) {
         let h_calls = { let mut lock = self.http_queue.lock().unwrap(); std::mem::take(&mut *lock) };
         process_http_queue(h_calls, self.http_responses.clone());
 
         let c_calls = { let mut lock = self.cli_queue.lock().unwrap(); std::mem::take(&mut *lock) };
         process_cli_queue(c_calls, self.cli_responses.clone());
+    }
+
+    pub fn draw(&mut self) {
+        // 1. Process Queues
+        self.process_queues();
 
         // 2. Get JS updates
         let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64;
@@ -833,11 +837,15 @@ fn main() -> anyhow::Result<()> {
     handle.insert_source(timer, move |_, _, app| {
         let delay = { let mut lock = app.refresh_delay.lock().unwrap(); lock.take() };
         if let Some(ms) = delay {
-            app.needs_redraw = true; let surface = app.window.wl_surface().clone(); surface.frame(&app.qh, surface.clone()); app.window.wl_surface().commit();
+            app.needs_redraw = true;
+            let surface = app.window.wl_surface().clone();
+            surface.frame(&app.qh, surface.clone());
+            app.window.wl_surface().commit();
             TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
         } else {
-            if app.needs_redraw { app.draw(); }
-            TimeoutAction::ToDuration(Duration::from_millis(200))
+            // Force a draw/update cycle to catch background HTTP responses
+            app.draw();
+            TimeoutAction::ToDuration(Duration::from_millis(100))
         }
     }).expect("insert timer");
 
