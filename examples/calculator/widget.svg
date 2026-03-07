@@ -1,0 +1,102 @@
+<svg viewBox="0 0 250 350" xmlns="http://www.w3.org/2000/svg" id="svg-root">
+    <!-- Main Background Wrapper -->
+    <rect x="5" y="5" width="240" height="340" rx="20" fill="#1e1e2e" fill-opacity="0.8" />
+
+    <!-- Display Pill -->
+    <rect x="15" y="15" width="220" height="50" rx="15" fill="#11111b" fill-opacity="0.6" />
+    <text id="display" x="225" y="50" text-anchor="end" fill="#cdd6f4" font-family="monospace" font-size="28" font-weight="bold">0</text>
+    <text id="sub-display" x="225" y="30" text-anchor="end" fill="#585b70" font-family="monospace" font-size="12"> </text>
+
+    <!-- Buttons Grid -->
+    <g transform="translate(15, 80)">
+        <!-- Row 1: C, ( ), / -->
+        <g id="btn-C" transform="translate(0, 0)">
+            <rect width="50" height="45" rx="12" fill="#f38ba8" fill-opacity="0.3" />
+            <text x="25" y="28" text-anchor="middle" fill="#f38ba8" font-family="sans-serif" font-size="16" font-weight="bold">C</text>
+        </g>
+        <g id="btn-paren-open" transform="translate(56, 0)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">(</text>
+        </g>
+        <g id="btn-paren-close" transform="translate(112, 0)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">)</text>
+        </g>
+        <g id="btn-div" transform="translate(168, 0)">
+            <rect width="50" height="45" rx="12" fill="#fab387" fill-opacity="0.3" />
+            <text x="25" y="28" text-anchor="middle" fill="#fab387" font-family="sans-serif" font-size="16">÷</text>
+        </g>
+
+        <!-- Row 2: 7, 8, 9, * -->
+        <g id="btn-7" transform="translate(0, 55)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">7</text>
+        </g>
+        <g id="btn-8" transform="translate(56, 55)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">8</text>
+        </g>
+        <g id="btn-9" transform="translate(112, 55)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">9</text>
+        </g>
+        <g id="btn-mul" transform="translate(168, 55)">
+            <rect width="50" height="45" rx="12" fill="#fab387" fill-opacity="0.3" />
+            <text x="25" y="28" text-anchor="middle" fill="#fab387" font-family="sans-serif" font-size="16">×</text>
+        </g>
+
+        <!-- Row 3: 4, 5, 6, - -->
+        <g id="btn-4" transform="translate(0, 110)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">4</text>
+        </g>
+        <g id="btn-5" transform="translate(56, 110)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">5</text>
+        </g>
+        <g id="btn-6" transform="translate(112, 110)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">6</text>
+        </g>
+        <g id="btn-sub" transform="translate(168, 110)">
+            <rect width="50" height="45" rx="12" fill="#fab387" fill-opacity="0.3" />
+            <text x="25" y="28" text-anchor="middle" fill="#fab387" font-family="sans-serif" font-size="16">−</text>
+        </g>
+
+        <!-- Row 4: 1, 2, 3, + -->
+        <g id="btn-1" transform="translate(0, 165)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">1</text>
+        </g>
+        <g id="btn-2" transform="translate(56, 165)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">2</text>
+        </g>
+        <g id="btn-3" transform="translate(112, 165)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">3</text>
+        </g>
+        <g id="btn-add" transform="translate(168, 165)">
+            <rect width="50" height="45" rx="12" fill="#fab387" fill-opacity="0.3" />
+            <text x="25" y="28" text-anchor="middle" fill="#fab387" font-family="sans-serif" font-size="16">+</text>
+        </g>
+
+        <!-- Row 5: 0, ., back, = -->
+        <g id="btn-0" transform="translate(0, 220)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">0</text>
+        </g>
+        <g id="btn-dot" transform="translate(56, 220)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="16">.</text>
+        </g>
+        <g id="btn-back" transform="translate(112, 220)">
+            <rect width="50" height="45" rx="12" fill="#313244" fill-opacity="0.5" />
+            <text x="25" y="28" text-anchor="middle" fill="#cdd6f4" font-family="sans-serif" font-size="14">⌫</text>
+        </g>
+        <g id="btn-equal" transform="translate(168, 220)">
+            <rect width="50" height="45" rx="12" fill="#a6e3a1" fill-opacity="0.4" />
+            <text x="25" y="28" text-anchor="middle" fill="#a6e3a1" font-family="sans-serif" font-size="16" font-weight="bold">=</text>
+        </g>
+    </g>
+</svg>

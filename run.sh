@@ -59,6 +59,9 @@ case $EXAMPLE in
     "weather")
         run_example "Weather Forecast" "examples/weather/widget.svg" "examples/weather/widget.js" 700 220
         ;;
+    "calculator")
+        run_example "Calculator" "examples/calculator/widget.svg" "examples/calculator/widget.js" 250 350
+        ;;
     "clock")
         run_example "Analog Clock" "examples/clock/clock.svg" "examples/clock/widget.js" 200 200
         ;;
