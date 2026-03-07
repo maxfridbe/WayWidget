@@ -147,6 +147,35 @@ interface WidgetState {
     getGlobalPersistence(key: string): string;
 }
 
+interface HttpResponse {
+    status: number;
+    body: string;
+    error?: string;
+}
+
+interface WidgetResponse {
+    /**
+     * Normalized coordinates of the last click (0-1), or undefined.
+     */
+    click?: { x: number, y: number };
+    
+    /**
+     * Array of strings representing keys pressed since last update.
+     * Prefixed with '+' for press and '-' for release.
+     */
+    keyboard?: string[];
+
+    /**
+     * Map of URLs to their asynchronous HTTP responses.
+     */
+    http?: Record<string, HttpResponse>;
+
+    /**
+     * Map of command strings to their asynchronous CLI responses.
+     */
+    cli?: Record<string, { output: string, error?: string }>;
+}
+
 /**
  * Interface to request the next refresh cycle.
  */
@@ -160,7 +189,7 @@ interface RefreshRequest {
 
     /**
      * Enables keyboard event capture for the next frame.
-     * Keys will be passed to the next update() call in the 'keys' parameter.
+     * Keys will be passed to the next update() call in the 'response.keyboard' parameter.
      */
     globalKeyboardEvents(): void;
 
@@ -172,9 +201,33 @@ interface RefreshRequest {
 
     /**
      * Enables mouse click capture for the next frame.
-     * If not called, the 'click' parameter in the next update() will be undefined.
+     * If not called, the 'response.click' parameter in the next update() will be undefined.
      */
     localClickEvents(): void;
+
+    /**
+     * Triggers an asynchronous CLI command execution.
+     * Results appear in response.cli[command] in a later update() call.
+     * Must resolve within 10 seconds.
+     * @param command The command to execute (e.g. "ip address").
+     */
+    CliInvoke(command: string): void;
+
+    /**
+     * Triggers an asynchronous JSON GET request.
+     * Results appear in response.http[url] in a later update() call.
+     * @param url The target URL.
+     * @param headers Optional request headers.
+     */
+    jsonHttpGet(url: string, headers?: Record<string, string>): void;
+
+    /**
+     * Triggers an asynchronous JSON POST request.
+     * @param url The target URL.
+     * @param headers Optional request headers.
+     * @param body The string body to send.
+     */
+    jsonHttpPost(url: string, headers?: Record<string, string>, body?: string): void;
 }
 
 /**
@@ -182,9 +235,8 @@ interface RefreshRequest {
  * This function is called on every update cycle.
  * @param api The WidgetAPI instance for manipulation.
  * @param timestamp Current time in milliseconds.
- * @param click Normalized coordinates of the last click (0-1), or undefined.
- * @param keys Array of strings representing keys pressed since last update.
+ * @param response Object containing current frame events (click, keyboard, http, cli).
  * @param state Persistent state object for the widget.
  * @param request Interface to request the next refresh cycle.
  */
-declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, keys?: string[], state?: WidgetState, request?: RefreshRequest): void;
+declare function update(api: WidgetAPI, timestamp: number, response: WidgetResponse, state: WidgetState, request: RefreshRequest): void;

@@ -1,6 +1,6 @@
-function update(api, timestamp, click, keys, state, request) {
+function update(api, timestamp, response, state, request) {
     if (request) {
-        request.globalKeyboardEvents();
+        request.localKeyboardEvents();
     }
 
     let activeKeys = state.getObject("active_keys") || {};
@@ -20,8 +20,8 @@ function update(api, timestamp, click, keys, state, request) {
         "Escape": "Escape"
     };
 
-    if (keys && keys.length > 0) {
-        keys.forEach(k => {
+    if (response.keyboard && response.keyboard.length > 0) {
+        response.keyboard.forEach(k => {
             const isPress = k.startsWith('+');
             let name = k.substring(1);
             

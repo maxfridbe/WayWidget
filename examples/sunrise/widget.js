@@ -13,7 +13,7 @@ function interpolateColor(color1, color2, factor) {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function update(api, timestamp, click, keys, state, request) {
+function update(api, timestamp, response, state, request) {
     if (request) {
         request.localClickEvents();
     }
@@ -24,7 +24,7 @@ function update(api, timestamp, click, keys, state, request) {
         state.set("enabled", "true");
     }
 
-    if (click) {
+    if (response.click) {
         enabled = (enabled === "true") ? "false" : "true";
         state.set("enabled", enabled);
         console.log("Sunrise animation enabled:", enabled);

@@ -38,6 +38,7 @@ Point the engine at specific SVG and JS files.
 | `--script` | `-j` | Path to the JavaScript logic file | - |
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
+| `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
 
 ### Subcommand: `run`
 Loads a widget by convention from `~/.config/waywidget/<name>/`.
@@ -52,6 +53,7 @@ waywidget run <widget_name> [OPTIONS]
 | `--name` | `-n` | Custom instance name (for persistent config & stopping) | `<widget_name>` |
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
+| `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
 
 ### Subcommand: `stop`
 Stops a running widget instance by its name.

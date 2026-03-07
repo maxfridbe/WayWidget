@@ -1,6 +1,6 @@
-function update(api, timestamp, click, keys, state, request) {
+function update(api, timestamp, response, state, request) {
     if (request) {
-        request.localKeyEvents();
+        request.localKeyboardEvents();
         request.refreshInMS(33); // High frequency for smooth pulsing
     }
 
@@ -10,8 +10,8 @@ function update(api, timestamp, click, keys, state, request) {
     const maxSpeed = 5.0;
     const step = 0.2;
 
-    if (keys && keys.length > 0) {
-        keys.forEach(k => {
+    if (response.keyboard && response.keyboard.length > 0) {
+        response.keyboard.forEach(k => {
             if (k.startsWith('+')) {
                 let name = k.substring(1);
                 if (name.startsWith("XK_")) name = name.substring(3);
