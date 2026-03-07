@@ -39,6 +39,7 @@ Point the engine at specific SVG and JS files.
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
 | `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
+| `--desktop` | - | Desktop mode: places widget just above the wallpaper layer | `false` |
 
 ### Subcommand: `run`
 Loads a widget by convention from `~/.config/waywidget/<name>/`.
@@ -54,6 +55,7 @@ waywidget run <widget_name> [OPTIONS]
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
 | `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
+| `--desktop` | - | Desktop mode: places widget just above the wallpaper layer | `false` |
 
 ### Subcommand: `stop`
 Stops a running widget instance by its name.

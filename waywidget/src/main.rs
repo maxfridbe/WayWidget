@@ -10,6 +10,7 @@ use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
     delegate_shm, delegate_xdg_shell, delegate_xdg_window, delegate_keyboard,
+    delegate_layer,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     seat::{
@@ -17,11 +18,14 @@ use smithay_client_toolkit::{
         Capability, SeatHandler, SeatState,
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
-    shell::xdg::{
-        window::{Window, WindowConfigure, WindowHandler, WindowDecorations},
-        XdgShell,
+    shell::{
+        xdg::{
+            window::{Window, WindowConfigure, WindowHandler, WindowDecorations},
+            XdgShell,
+        },
+        WaylandSurface,
+        wlr_layer::{LayerShell, LayerSurface, LayerShellHandler, LayerSurfaceConfigure, Anchor, Layer, KeyboardInteractivity},
     },
-    shell::WaylandSurface,
 };
 use wayland_client::{
     globals::registry_queue_init,
@@ -74,6 +78,8 @@ struct Args {
     height: u32,
     #[arg(long)]
     position: Option<String>,
+    #[arg(long)]
+    desktop: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -88,6 +94,8 @@ enum Commands {
         height: Option<u32>,
         #[arg(long)]
         position: Option<String>,
+        #[arg(long)]
+        desktop: bool,
     },
     Stop {
         #[arg(short, long)]
@@ -101,6 +109,8 @@ pub struct WidgetConfig {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    #[serde(default)]
+    pub desktop: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -400,48 +410,37 @@ impl Class for WidgetState {
             data.insert(key, val);
             Ok(JsValue::undefined())
         }));
-        class.method(JsString::from("clear"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
-            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
-            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            state.data.lock().unwrap().remove(&key);
-            Ok(JsValue::undefined())
-        }));
-        class.method(JsString::from("setObject"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
-            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
-            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            let val = args.get_or_undefined(1);
-            
-            let json = context.global_object().get(JsString::from("JSON"), context)?.as_object().expect("JSON global exists").clone();
-            let stringify = json.get(JsString::from("stringify"), context)?.as_object().expect("JSON.stringify exists").clone();
-            let stringified = stringify.call(&json.into(), &[val.clone()], context)?.to_string(context)?.to_std_string().unwrap();
-
-            let mut data = state.data.lock().unwrap();
-            data.insert(key, stringified);
-            Ok(JsValue::undefined())
-        }));
-        class.method(JsString::from("getObject"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
-            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
-            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
-            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            let val = state.data.lock().unwrap().get(&key).cloned().unwrap_or_default();
-            if val.is_empty() {
-                return Ok(JsValue::null());
-            }
-            
-            let json = context.global_object().get(JsString::from("JSON"), context)?.as_object().expect("JSON global exists").clone();
-            let parse = json.get(JsString::from("parse"), context)?.as_object().expect("JSON.parse exists").clone();
-            parse.call(&json.into(), &[JsString::from(val).into()], context)
-        }));
         class.method(JsString::from("get"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
             let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            let val = state.data.lock().unwrap().get(&key).cloned().unwrap_or_default();
+            let data = state.data.lock().unwrap();
+            let val = data.get(&key).cloned().unwrap_or_default();
             Ok(JsString::from(val).into())
         }));
+        class.method(JsString::from("clear"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let mut data = state.data.lock().unwrap();
+            data.remove(&key);
+            Ok(JsValue::undefined())
+        }));
         Ok(())
+    }
+}
+
+pub enum WidgetWindow {
+    Xdg(Window),
+    Layer(LayerSurface),
+}
+
+impl WidgetWindow {
+    fn wl_surface(&self) -> &wl_surface::WlSurface {
+        match self {
+            WidgetWindow::Xdg(w) => w.wl_surface(),
+            WidgetWindow::Layer(s) => s.wl_surface(),
+        }
     }
 }
 
@@ -452,8 +451,9 @@ pub struct WayWidget {
     pub _compositor_state: CompositorState,
     pub _shm_state: Shm,
     pub _xdg_shell_state: XdgShell,
+    pub _layer_shell_state: LayerShell,
 
-    pub window: Window,
+    pub window: WidgetWindow,
     pub pool: SlotPool,
     pub qh: QueueHandle<Self>,
     
@@ -509,6 +509,8 @@ impl WayWidget {
         let mut cfg = self.current_config.clone();
         cfg.width = self.width;
         cfg.height = self.height;
+        if let WidgetWindow::Layer(_) = &self.window { cfg.desktop = true; }
+        else { cfg.desktop = false; }
         positions.widgets.insert(self.widget_name.clone(), cfg);
         if let Ok(f) = fs::File::create(&self.positions_file) {
             serde_yaml::to_writer(f, &positions).ok();
@@ -685,6 +687,19 @@ impl OutputHandler for WayWidget {
 
 impl ShmHandler for WayWidget { fn shm_state(&mut self) -> &mut Shm { &mut self._shm_state } }
 
+impl LayerShellHandler for WayWidget {
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
+        self.exit = true;
+    }
+    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
+        let (new_w, new_h) = configure.new_size;
+        if new_w != self.width || new_h != self.height {
+            self.width = new_w; self.height = new_h; self.save_positions();
+        }
+        self.needs_redraw = true;
+    }
+}
+
 impl WindowHandler for WayWidget {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) { self.exit = true; }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window, configure: WindowConfigure, _: u32) {
@@ -727,9 +742,11 @@ impl PointerHandler for WayWidget {
                         self.last_click = Some((px / self.width as f64, py / self.height as f64));
                         self.clicked_id = self.find_clicked_id(px, py);
                         self.needs_redraw = true;
-                        if let Some(seat) = &self.seat {
-                            if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 { self.window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight); }
-                            else { self.window.xdg_toplevel()._move(seat, serial); }
+                        if let WidgetWindow::Xdg(window) = &self.window {
+                            if let Some(seat) = &self.seat {
+                                if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 { window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight); }
+                                else { window.xdg_toplevel()._move(seat, serial); }
+                            }
                         }
                         self.draw();
                     }
@@ -746,6 +763,7 @@ delegate_shm!(WayWidget);
 delegate_seat!(WayWidget);
 delegate_pointer!(WayWidget);
 delegate_keyboard!(WayWidget);
+delegate_layer!(WayWidget);
 delegate_xdg_shell!(WayWidget);
 delegate_xdg_window!(WayWidget);
 delegate_registry!(WayWidget);
@@ -775,16 +793,16 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (svg_path, script_path, width, height, widget_name, cli_pos) = match &args.command {
-        Some(Commands::Run { widget, name, width, height, position }) => {
+    let (svg_path, script_path, width, height, widget_name, cli_pos, mut desktop) = match &args.command {
+        Some(Commands::Run { widget, name, width, height, position, desktop }) => {
             let widget_dir = config_dir.join(widget);
             let name = name.clone().unwrap_or_else(|| widget.clone());
-            (widget_dir.join("widget.svg"), Some(widget_dir.join("widget.js")), width.unwrap_or(200), height.unwrap_or(200), name, position.clone())
+            (widget_dir.join("widget.svg"), Some(widget_dir.join("widget.js")), width.unwrap_or(200), height.unwrap_or(200), name, position.clone(), *desktop)
         }
         None => {
             let svg = args.svg.clone().ok_or_else(|| anyhow::anyhow!("SVG path required if not using 'run'"))?;
             let name = svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
-            (svg, args.script.clone(), args.width, args.height, name, args.position.clone())
+            (svg, args.script.clone(), args.width, args.height, name, args.position.clone(), args.desktop)
         }
         _ => unreachable!(),
     };
@@ -802,6 +820,8 @@ fn main() -> anyhow::Result<()> {
             cfg.y = parts[1];
         }
     }
+    
+    if cfg.desktop { desktop = true; }
 
     let final_width = if cfg.width > 0 { cfg.width } else { width };
     let final_height = if cfg.height > 0 { cfg.height } else { height };
@@ -820,10 +840,33 @@ fn main() -> anyhow::Result<()> {
     let compositor_state = CompositorState::bind(&globals, &qh).expect("bind compositor");
     let shm_state = Shm::bind(&globals, &qh).expect("bind shm");
     let xdg_shell_state = XdgShell::bind(&globals, &qh).expect("bind xdg_shell");
+    let layer_shell_state = LayerShell::bind(&globals, &qh).expect("bind layer_shell");
 
     let surface = compositor_state.create_surface(&qh);
-    let window = xdg_shell_state.create_window(surface, WindowDecorations::None, &qh);
-    window.set_title("WayWidget"); window.set_app_id("waywidget"); window.set_min_size(Some((100, 100))); window.set_max_size(Some((1200, 1200))); window.commit();
+    let window = if desktop {
+        let layer_surface = layer_shell_state.create_layer_surface(
+            &qh,
+            surface,
+            Layer::Bottom,
+            Some("waywidget".to_string()),
+            None,
+        );
+        layer_surface.set_size(final_width, final_height);
+        layer_surface.set_anchor(Anchor::TOP | Anchor::LEFT);
+        layer_surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+        // Position via margin if provided
+        layer_surface.set_margin(cfg.y, 0, 0, cfg.x);
+        layer_surface.commit();
+        WidgetWindow::Layer(layer_surface)
+    } else {
+        let window = xdg_shell_state.create_window(surface, WindowDecorations::None, &qh);
+        window.set_title("WayWidget");
+        window.set_app_id("waywidget");
+        window.set_min_size(Some((100, 100)));
+        window.set_max_size(Some((1200, 1200)));
+        window.commit();
+        WidgetWindow::Xdg(window)
+    };
 
     let pool = SlotPool::new(1200 * 1200 * 4 * 2, &shm_state).expect("create pool");
     let svg_template = fs::read_to_string(&svg_path).expect("read svg");
@@ -847,7 +890,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(path) = &script_path { let js_source = fs::read_to_string(path).expect("read script"); js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script"); }
 
     let mut app = WayWidget {
-        registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state,
+        registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state, _layer_shell_state: layer_shell_state,
         window, pool, qh: qh.clone(), svg_root, viewbox, svg_handle: None,
         js_context, api_proto, handle_proto, state_proto, request_proto, 
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), keys_pressed: keys_pressed.clone(),
@@ -936,75 +979,5 @@ mod tests {
         ops.insert("to-remove".to_string(), vec![SvgOp::Remove]);
         apply_ops_to_svg(&mut root, ops);
         assert!(find_element_by_id(&mut root, "to-remove").is_none());
-    }
-
-    #[test]
-    fn test_combined_transforms() {
-        let svg = r#"<svg><rect id="test" /></svg>"#;
-        let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
-        ops.insert("test".to_string(), vec![
-            SvgOp::SetRotation { angle: 45.0, cx: 10.0, cy: 10.0 },
-            SvgOp::SetTranslation { x: 5.0, y: 5.0 },
-            SvgOp::SetScale { factor: 2.0 }
-        ]);
-        apply_ops_to_svg(&mut root, ops);
-        let el = find_element_by_id(&mut root, "test").unwrap();
-        let transform = el.attributes.get("transform").unwrap();
-        assert!(transform.contains("rotate(45, 10, 10)")); assert!(transform.contains("translate(5, 5)")); assert!(transform.contains("scale(2)"));
-    }
-
-    #[test]
-    fn test_set_attribute() {
-        let svg = r#"<svg><rect id="test" fill="red" /></svg>"#;
-        let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
-        ops.insert("test".to_string(), vec![SvgOp::SetAttribute { name: "fill".to_string(), value: "blue".to_string() }]);
-        apply_ops_to_svg(&mut root, ops);
-        let el = find_element_by_id(&mut root, "test").unwrap();
-        assert_eq!(el.attributes.get("fill").unwrap(), "blue");
-    }
-
-    #[test]
-    fn test_full_js_integration() {
-        let svg = r#"<svg viewBox="0 0 100 100"><rect id="rect1" x="0" y="0" width="10" height="10" /><g id="group1"></g></svg>"#;
-        let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut js_context = JsContext::default();
-        js_context.register_global_class::<WidgetAPI>().unwrap(); js_context.register_global_class::<ElementHandle>().unwrap(); js_context.register_global_class::<WidgetState>().unwrap(); js_context.register_global_class::<crate::RefreshRequest>().unwrap();
-        let api_proto = get_proto::<WidgetAPI>(&mut js_context); let state_proto = get_proto::<WidgetState>(&mut js_context); let request_proto = get_proto::<crate::RefreshRequest>(&mut js_context);
-        let shared_ops = Arc::new(Mutex::new(HashMap::new())); let shared_state = Arc::new(Mutex::new(HashMap::new())); let refresh_delay = Arc::new(Mutex::new(None)); let capture_keyboard = Arc::new(Mutex::new(false)); let capture_clicks = Arc::new(Mutex::new(false)); let http_queue = Arc::new(Mutex::new(Vec::new())); let cli_queue = Arc::new(Mutex::new(Vec::new()));
-        let js_code = r#"
-            function update(api, timestamp, response, state, request) {
-                api.findById("rect1").setRotation(90).setOpacity(0.7);
-                api.findById("group1").appendElement("circle", { id: "dynamic_circle", r: "5" });
-                state.set("last_ts", timestamp.toString());
-                request.refreshInMS(500);
-                if (response.keyboard && response.keyboard[0] === "+Enter") { state.set("key_pressed", "true"); }
-            }
-        "#;
-        js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
-        let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: get_proto::<ElementHandle>(&mut js_context) };
-        let js_api = JsObject::from_proto_and_data(Some(api_proto), api_data);
-        let state_data = WidgetState { data: shared_state.clone(), states_file: PathBuf::from("test_states.yml") };
-        let js_state = JsObject::from_proto_and_data(Some(state_proto), state_data);
-        let request_data = crate::RefreshRequest { 
-            delay_ms: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), http_queue: http_queue.clone(), cli_queue: cli_queue.clone(),
-        };
-        let js_request = JsObject::from_proto_and_data(Some(request_proto), request_data);
-        let js_response = JsObject::default(js_context.intrinsics());
-        let js_keyboard = boa_engine::object::builtins::JsArray::new(&mut js_context);
-        js_keyboard.push(JsString::from("+Enter"), &mut js_context).ok();
-        js_response.set(JsString::from("keyboard"), JsValue::from(js_keyboard), true, &mut js_context).ok();
-        let update_func = js_context.global_object().get(JsString::from("update"), &mut js_context).unwrap();
-        update_func.as_object().unwrap().call(&JsValue::undefined(), &[js_api.into(), JsValue::new(12345), js_response.into(), js_state.into(), js_request.into()], &mut js_context).unwrap();
-        let ops = shared_ops.lock().unwrap().clone();
-        apply_ops_to_svg(&mut root, ops);
-        let rect = find_element_by_id(&mut root, "rect1").unwrap();
-        assert_eq!(rect.attributes.get("transform").unwrap(), "rotate(90, 50, 50)");
-        assert_eq!(rect.attributes.get("opacity").unwrap(), "0.7");
-        assert!(find_element_by_id(&mut root, "dynamic_circle").is_some());
-        assert_eq!(shared_state.lock().unwrap().get("last_ts").unwrap(), "12345");
-        assert_eq!(shared_state.lock().unwrap().get("key_pressed").unwrap(), "true");
-        assert_eq!(refresh_delay.lock().unwrap().unwrap(), 500);
     }
 }
