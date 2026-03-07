@@ -79,37 +79,47 @@ Use the provided helper script to run the examples:
 ./run.sh sunrise   # Animated 60-second day/night cycle
 ./run.sh keyboard  # Interactive 60% mechanical keyboard visualizer
 ./run.sh warpcore  # Animated vertical reactor core with speed controls
+./run.sh ip        # Asynchronous Public IP visualizer using HTTP API
 ./run.sh lion      # Static geometric lion widget
 ```
 
 ## JavaScript Interaction API
 
-The system looks for a global `update(api, timestamp, click, keys, state, request)` function.
+The system looks for a global `update(api, timestamp, response, state, request)` function.
 
 - `api`: The `WidgetAPI` instance for finding elements and manipulating their attributes.
 - `timestamp`: The current time in milliseconds (useful for animations).
-- `click`: An object `{ x: number, y: number }` representing normalized coordinates (0.0 to 1.0) of the last click, or `null` if no click occurred in the last frame.
-- `keys`: An array of strings representing keys pressed since the last update.
+- `response`: An object containing events and data from the engine:
+    - `click`: `{ x: number, y: number }` normalized coordinates, or `null`.
+    - `keyboard`: `string[]` of keys pressed (prefixed with `+`) or released (`-`).
+    - `http`: `Record<string, { status: number, body: string, error?: string }>` containing async HTTP results.
 - `state`: A persistent `WidgetState` store that survives between `update` calls.
-- `request`: A `RefreshRequest` instance used to schedule the next update.
+- `request`: A `RefreshRequest` instance used to schedule the next update or trigger network calls.
 
-### Example: Interactive Sunrise (`widget.js`)
+### Example: IP Visualizer (`widget.js`)
 
 ```javascript
-function update(api, timestamp, click, keys, state, request) {
-    let enabled = state.get("enabled") || "true";
+const URL = "https://api.ipify.org?format=json";
 
-    if (click) {
-        enabled = (enabled === "true") ? "false" : "true";
-        state.set("enabled", enabled);
-        console.log("Animation enabled:", enabled);
+function update(api, timestamp, response, state, request) {
+    // 1. Trigger fetch on start or click
+    if (state.get("last") === "" || response.click) {
+        request.jsonHttpGet(URL);
+        api.findById("status").setText("Fetching...");
     }
 
-    request.localClickEvents(); // Ensure clicks are captured for the next frame
-
-    if (enabled === "true") {
-        request.refreshInMS(33); // Request next update in 33ms (approx 30fps)
+    // 2. Check for async response
+    if (response.http && response.http[URL]) {
+        const res = response.http[URL];
+        if (res.status === 200) {
+            const ip = JSON.parse(res.body).ip;
+            api.findById("status").setText(ip);
+            state.set("last", ip);
+        }
     }
+
+    request.localClickEvents();
+    request.refreshInMS(1000);
 }
 ```
 
@@ -117,10 +127,11 @@ function update(api, timestamp, click, keys, state, request) {
 
 | Method | Description |
 |--------|-------------|
-| `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms` by the engine. |
-| `globalKeyboardEvents()` | Enables keyboard event capture for the next frame (when window is focused). |
-| `localKeyboardEvents()` | Alias for `globalKeyboardEvents()`. |
+| `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms`. |
+| `localKeyboardEvents()` | Enables keyboard event capture for the next frame. |
 | `localClickEvents()` | Enables mouse click capture for the next frame. |
+| `jsonHttpGet(url, headers?)` | Triggers an asynchronous JSON GET request. |
+| `jsonHttpPost(url, headers?, body?)` | Triggers an asynchronous JSON POST request. |
 
 ### WidgetState API
 
@@ -157,6 +168,14 @@ For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
 - **Move**: Left-click and drag anywhere on the widget to move it.
 - **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window.
+
+## Persistence
+
+WayWidgets automatically manages persistence in `~/.config/waywidget/`:
+
+- **`positions.yml`**: Stores the window width and height for each widget instance (by name).
+- **`widgets_states.yml`**: Stores global key-value pairs set via `state.setGlobalPersistence()`.
+- **`pids/`**: Stores PID files for active widgets, used by the `stop` command.
 
 ## Window Manager Configuration
 
