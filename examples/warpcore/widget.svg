@@ -1,0 +1,33 @@
+<svg viewBox="0 0 100 264" xmlns="http://www.w3.org/2000/svg" id="svg-root">
+    <g transform="translate(5, 10)">
+        <!-- Top Core End -->
+        <path d="M 0 0 L 90 0 L 80 10 L 10 10 Z" fill="#cc9933" />
+        <rect x="10" y="10" width="70" height="5" fill="#996633" />
+        
+        <!-- Top Segments -->
+        <rect id="seg-t-0" x="20" y="20" width="50" height="12" rx="4" fill="#ffcc33" opacity="0.3" />
+        <rect id="seg-t-1" x="20" y="35" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+        <rect id="seg-t-2" x="20" y="50" width="50" height="12" rx="4" fill="#ffcc33" opacity="0.3" />
+        <rect id="seg-t-3" x="20" y="65" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+        <rect id="seg-t-4" x="20" y="80" width="50" height="12" rx="4" fill="#ffcc33" opacity="0.3" />
+        <rect id="seg-t-5" x="20" y="95" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+        
+        <!-- Main Reactor Chamber -->
+        <g id="chamber">
+            <rect x="15" y="112" width="60" height="24" rx="10" fill="#cc9933" />
+            <circle cx="45" cy="124" r="6" fill="#ffffcc" />
+        </g>
+        
+        <!-- Bottom Segments -->
+        <rect id="seg-b-0" x="20" y="141" width="50" height="12" rx="4" fill="#ffffcc" opacity="0.3" />
+        <rect id="seg-b-1" x="20" y="156" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+        <rect id="seg-b-2" x="20" y="171" width="50" height="12" rx="4" fill="#ffcc33" opacity="0.3" />
+        <rect id="seg-b-3" x="20" y="186" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+        <rect id="id-seg-b-4" x="20" y="201" width="50" height="12" rx="4" fill="#ffcc33" opacity="0.3" />
+        <rect id="seg-b-5" x="20" y="216" width="50" height="12" rx="4" fill="#cc9933" opacity="0.3" />
+
+        <!-- Bottom Core End -->
+        <rect x="10" y="231" width="70" height="5" fill="#996633" />
+        <path d="M 10 236 L 80 236 L 90 246 L 0 246 Z" fill="#cc9933" />
+    </g>
+</svg>

@@ -13,7 +13,10 @@ function interpolateColor(color1, color2, factor) {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function update(api, timestamp, click, state, request) {
+function update(api, timestamp, click, keys, state, request) {
+    if (request) {
+        request.localClickEvents();
+    }
     // 1. Handle Click Interactivity (Toggle Pause)
     let enabled = state.get("enabled");
     if (enabled === "") { // Initial state

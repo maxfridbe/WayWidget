@@ -36,6 +36,12 @@ case $EXAMPLE in
     "sunrise")
         run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450
         ;;
+    "keyboard")
+        run_example "Keyboard Visualizer" "examples/keyboard/widget.svg" "examples/keyboard/widget.js" 820 350
+        ;;
+    "warpcore")
+        run_example "Warp Core" "examples/warpcore/widget.svg" "examples/warpcore/widget.js" 150 400
+        ;;
     "lion")
         run_example "Static Lion" "examples/lion/widget.svg" "" 200 200
         ;;

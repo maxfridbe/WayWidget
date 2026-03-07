@@ -130,6 +130,21 @@ interface WidgetState {
      * @returns The stored object, or null if not found.
      */
     getObject(key: string): any;
+
+    /**
+     * Sets a truly global persistent string value across all widgets.
+     * Saved to widgets_states.yml.
+     * @param key The key to store.
+     * @param value The value to store.
+     */
+    setGlobalPersistence(key: string, value: string): void;
+
+    /**
+     * Retrieves a truly global persistent string value.
+     * @param key The key to retrieve.
+     * @returns The stored value, or an empty string if not found.
+     */
+    getGlobalPersistence(key: string): string;
 }
 
 /**
@@ -142,6 +157,24 @@ interface RefreshRequest {
      * @param ms Delay in milliseconds.
      */
     refreshInMS(ms: number): void;
+
+    /**
+     * Enables keyboard event capture for the next frame.
+     * Keys will be passed to the next update() call in the 'keys' parameter.
+     */
+    globalKeyboardEvents(): void;
+
+    /**
+     * Enables keyboard event capture for the next frame.
+     * (Alias for globalKeyboardEvents)
+     */
+    localKeyboardEvents(): void;
+
+    /**
+     * Enables mouse click capture for the next frame.
+     * If not called, the 'click' parameter in the next update() will be undefined.
+     */
+    localClickEvents(): void;
 }
 
 /**
@@ -150,7 +183,8 @@ interface RefreshRequest {
  * @param api The WidgetAPI instance for manipulation.
  * @param timestamp Current time in milliseconds.
  * @param click Normalized coordinates of the last click (0-1), or undefined.
+ * @param keys Array of strings representing keys pressed since last update.
  * @param state Persistent state object for the widget.
  * @param request Interface to request the next refresh cycle.
  */
-declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, state?: WidgetState, request?: RefreshRequest): void;
+declare function update(api: WidgetAPI, timestamp: number, click?: { x: number, y: number }, keys?: string[], state?: WidgetState, request?: RefreshRequest): void;

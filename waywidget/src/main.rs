@@ -9,11 +9,12 @@ use clap::Parser;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_shm, delegate_xdg_shell, delegate_xdg_window,
+    delegate_shm, delegate_xdg_shell, delegate_xdg_window, delegate_keyboard,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     seat::{
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        keyboard::{KeyEvent, KeyboardHandler, Modifiers},
         Capability, SeatHandler, SeatState,
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
@@ -25,7 +26,7 @@ use smithay_client_toolkit::{
 };
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_pointer, wl_seat, wl_shm, wl_surface, wl_output},
+    protocol::{wl_pointer, wl_seat, wl_shm, wl_surface, wl_output, wl_keyboard},
     Connection, QueueHandle,
 };
 use wayland_protocols::xdg::shell::client::xdg_toplevel::ResizeEdge;
@@ -112,6 +113,10 @@ enum SvgOp {
 struct RefreshRequest {
     #[unsafe_ignore_trace]
     delay_ms: Arc<Mutex<Option<u32>>>,
+    #[unsafe_ignore_trace]
+    capture_keyboard: Arc<Mutex<bool>>,
+    #[unsafe_ignore_trace]
+    capture_clicks: Arc<Mutex<bool>>,
 }
 
 impl Class for RefreshRequest {
@@ -126,6 +131,34 @@ impl Class for RefreshRequest {
             let ms = args.get_or_undefined(0).as_number().unwrap_or(0.0) as u32;
             let mut delay = request.delay_ms.lock().unwrap();
             *delay = Some(ms.max(33));
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("globalKeyboardEvents"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let mut capture = request.capture_keyboard.lock().unwrap();
+            *capture = true;
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("localKeyboardEvents"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let mut capture = request.capture_keyboard.lock().unwrap();
+            *capture = true;
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("localKeyEvents"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let mut capture = request.capture_keyboard.lock().unwrap();
+            *capture = true;
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("localClickEvents"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let mut capture = request.capture_clicks.lock().unwrap();
+            *capture = true;
             Ok(JsValue::undefined())
         }));
         Ok(())
@@ -220,8 +253,7 @@ impl Class for ElementHandle {
             let mut attributes = HashMap::new();
             let keys = attr_obj.own_property_keys(context)?;
             for key in keys {
-                let key_js = JsValue::from(key.clone());
-                let key_str = key_js.to_string(context)?.to_std_string().unwrap();
+                let key_str = key.to_string();
                 let val_str = attr_obj.get(key, context)?.to_string(context)?.to_std_string().unwrap();
                 attributes.insert(key_str, val_str);
             }
@@ -259,9 +291,9 @@ impl Class for WidgetAPI {
     }
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         class.method(JsString::from("findById"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
-            let id = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let api = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetAPI").into()))?;
+            let id = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let handle = ElementHandle { id, ops: api.ops.clone() };
             Ok(JsObject::from_proto_and_data(Some(api.handle_proto.clone()), handle).into())
         }));
@@ -273,6 +305,8 @@ impl Class for WidgetAPI {
 struct WidgetState {
     #[unsafe_ignore_trace]
     data: Arc<Mutex<HashMap<String, String>>>,
+    #[unsafe_ignore_trace]
+    states_file: PathBuf,
 }
 
 impl Class for WidgetState {
@@ -281,18 +315,47 @@ impl Class for WidgetState {
         Err(JsError::from_opaque(JsString::from("Cannot construct WidgetState directly").into()))
     }
     fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        class.method(JsString::from("setGlobalPersistence"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let val = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+
+            let mut global_data: HashMap<String, String> = if state.states_file.exists() {
+                let f = fs::File::open(&state.states_file).unwrap();
+                serde_yaml::from_reader(f).unwrap_or_default()
+            } else {
+                HashMap::new()
+            };
+
+            global_data.insert(key, val);
+            if let Ok(f) = fs::File::create(&state.states_file) {
+                serde_yaml::to_writer(f, &global_data).ok();
+            }
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("getGlobalPersistence"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
+            let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+
+            let global_data: HashMap<String, String> = if state.states_file.exists() {
+                let f = fs::File::open(&state.states_file).unwrap();
+                serde_yaml::from_reader(f).unwrap_or_default()
+            } else {
+                HashMap::new()
+            };
+
+            let val = global_data.get(&key).cloned().unwrap_or_default();
+            Ok(JsString::from(val).into())
+        }));
         class.method(JsString::from("set"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let state = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetState").into()))?;
             let key = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let val = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
-            
             let mut data = state.data.lock().unwrap();
-            let old_val = data.get(&key);
-            if old_val != Some(&val) {
-                println!("State Set: {} = {}", key, val);
-                data.insert(key, val);
-            }
+            data.insert(key, val);
             Ok(JsValue::undefined())
         }));
         class.method(JsString::from("clear"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
@@ -313,11 +376,7 @@ impl Class for WidgetState {
             let stringified = stringify.call(&json.into(), &[val.clone()], context)?.to_string(context)?.to_std_string().unwrap();
 
             let mut data = state.data.lock().unwrap();
-            let old_val = data.get(&key);
-            if old_val != Some(&stringified) {
-                println!("State Set Object: {} = {}", key, stringified);
-                data.insert(key, stringified);
-            }
+            data.insert(key, stringified);
             Ok(JsValue::undefined())
         }));
         class.method(JsString::from("getObject"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
@@ -368,8 +427,12 @@ struct WayWidget {
     shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
     shared_state: Arc<Mutex<HashMap<String, String>>>,
     refresh_delay: Arc<Mutex<Option<u32>>>,
+    capture_keyboard: Arc<Mutex<bool>>,
+    capture_clicks: Arc<Mutex<bool>>,
+    keys_pressed: Arc<Mutex<Vec<String>>>,
     
     pointer: Option<wl_pointer::WlPointer>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
     seat: Option<wl_seat::WlSeat>,
     pointer_pos: (f64, f64),
     last_click: Option<(f64, f64)>,
@@ -382,6 +445,7 @@ struct WayWidget {
     
     widget_name: String,
     positions_file: PathBuf,
+    states_file: PathBuf,
     current_config: WidgetConfig,
 }
 
@@ -528,22 +592,36 @@ impl WayWidget {
                 let api_data = WidgetAPI { ops: self.shared_ops.clone(), handle_proto: self.handle_proto.clone() };
                 let js_api = JsObject::from_proto_and_data(Some(self.api_proto.clone()), api_data);
 
-                let state_data = WidgetState { data: self.shared_state.clone() };
+                let state_data = WidgetState { data: self.shared_state.clone(), states_file: self.states_file.clone() };
                 let js_state = JsObject::from_proto_and_data(Some(self.state_proto.clone()), state_data);
 
-                let request_data = RefreshRequest { delay_ms: self.refresh_delay.clone() };
+                let request_data = RefreshRequest { 
+                    delay_ms: self.refresh_delay.clone(),
+                    capture_keyboard: self.capture_keyboard.clone(),
+                    capture_clicks: self.capture_clicks.clone(),
+                };
                 let js_request = JsObject::from_proto_and_data(Some(self.request_proto.clone()), request_data);
 
                 let click_val = if let Some((x, y)) = self.last_click.take() {
-                    let obj = JsObject::default(self.js_context.intrinsics());
-                    obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
-                    obj.set(JsString::from("y"), JsValue::new(y), true, &mut self.js_context).ok();
-                    obj.into()
+                    if *self.capture_clicks.lock().unwrap() {
+                        let obj = JsObject::default(self.js_context.intrinsics());
+                        obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
+                        obj.set(JsString::from("y"), JsValue::new(y), true, &mut self.js_context).ok();
+                        obj.into()
+                    } else {
+                        JsValue::undefined()
+                    }
                 } else {
                     JsValue::undefined()
                 };
+
+                let mut keys_vec = self.keys_pressed.lock().unwrap();
+                let js_keys = boa_engine::object::builtins::JsArray::new(&mut self.js_context);
+                for key in keys_vec.drain(..) {
+                    js_keys.push(JsString::from(key), &mut self.js_context).ok();
+                }
                 
-                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), click_val, js_state.into(), js_request.into()], &mut self.js_context)
+                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), click_val, js_keys.into(), js_state.into(), js_request.into()], &mut self.js_context)
                     .map_err(|e| println!("JS Error in update(): {}", e))
                     .ok();
             }
@@ -553,8 +631,10 @@ impl WayWidget {
         let has_ops = !ops.is_empty();
 
         // 2. Apply to tree if needed
-        if has_ops {
-            apply_ops_to_svg(&mut self.svg_root, ops);
+        if has_ops || self.svg_handle.is_none() {
+            if has_ops {
+                apply_ops_to_svg(&mut self.svg_root, ops);
+            }
             
             // Re-parse tree
             let mut out = Vec::new();
@@ -642,6 +722,37 @@ impl OutputHandler for WayWidget {
     fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
 }
 
+impl KeyboardHandler for WayWidget {
+    fn enter(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _surface: &wl_surface::WlSurface, _serial: u32, _raw_keys: &[u32], _keysyms: &[smithay_client_toolkit::seat::keyboard::Keysym]) {}
+    fn leave(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _surface: &wl_surface::WlSurface, _serial: u32) {}
+    fn press_key(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _serial: u32, event: KeyEvent) {
+        if *self.capture_keyboard.lock().unwrap() {
+            let key_name = event.keysym.name().map(|s| s.to_string())
+                .or_else(|| event.utf8.clone());
+            
+            if let Some(name) = key_name {
+                self.keys_pressed.lock().unwrap().push(format!("+{}", name));
+                self.needs_redraw = true;
+                self.draw();
+            }
+        }
+    }
+    fn release_key(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _serial: u32, event: KeyEvent) {
+        if *self.capture_keyboard.lock().unwrap() {
+            let key_name = event.keysym.name().map(|s| s.to_string())
+                .or_else(|| event.utf8.clone());
+            
+            if let Some(name) = key_name {
+                self.keys_pressed.lock().unwrap().push(format!("-{}", name));
+                self.needs_redraw = true;
+                self.draw();
+            }
+        }
+    }
+    fn repeat_key(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _serial: u32, _event: KeyEvent) {}
+    fn update_modifiers(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _keyboard: &wl_keyboard::WlKeyboard, _serial: u32, _modifiers: Modifiers, _raw_modifiers: smithay_client_toolkit::seat::keyboard::RawModifiers, _layout: u32) {}
+}
+
 impl ShmHandler for WayWidget {
     fn shm_state(&mut self) -> &mut Shm { &mut self._shm_state }
 }
@@ -671,9 +782,14 @@ impl SeatHandler for WayWidget {
             let pointer = self.seat_state.get_pointer(qh, &seat).expect("get pointer");
             self.pointer = Some(pointer);
         }
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            let keyboard = self.seat_state.get_keyboard(qh, &seat, None).expect("get keyboard");
+            self.keyboard = Some(keyboard);
+        }
     }
     fn remove_capability(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _seat: wl_seat::WlSeat, capability: Capability) {
         if capability == Capability::Pointer { self.pointer = None; }
+        if capability == Capability::Keyboard { self.keyboard = None; }
     }
     fn remove_seat(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _seat: wl_seat::WlSeat) {
         self.seat = None;
@@ -691,7 +807,9 @@ impl PointerHandler for WayWidget {
                 PointerEventKind::Press { button, serial, .. } => {
                     if button == 0x110 {
                         let (px, py) = self.pointer_pos;
-                        self.last_click = Some((px / self.width as f64, py / self.height as f64));
+                        if *self.capture_clicks.lock().unwrap() {
+                            self.last_click = Some((px / self.width as f64, py / self.height as f64));
+                        }
                         self.needs_redraw = true;
                         if let Some(seat) = &self.seat {
                             if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 {
@@ -714,6 +832,7 @@ delegate_output!(WayWidget);
 delegate_shm!(WayWidget);
 delegate_seat!(WayWidget);
 delegate_pointer!(WayWidget);
+delegate_keyboard!(WayWidget);
 delegate_xdg_shell!(WayWidget);
 delegate_xdg_window!(WayWidget);
 delegate_registry!(WayWidget);
@@ -749,14 +868,15 @@ fn main() -> anyhow::Result<()> {
             (svg, Some(script), width.unwrap_or(200), height.unwrap_or(200), name)
         }
         None => {
-            let svg = args.svg.ok_or_else(|| anyhow::anyhow!("SVG path required if not using 'run'"))?;
+            let svg = args.svg.clone().ok_or_else(|| anyhow::anyhow!("SVG path required if not using 'run'"))?;
             let name = svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
-            (svg, args.script, args.width, args.height, name)
+            (svg, args.script.clone(), args.width, args.height, name)
         }
     };
 
     let positions_file = config_dir.join("positions.yml");
-    let mut positions: Positions = if positions_file.exists() {
+    let states_file = config_dir.join("widgets_states.yml");
+    let positions: Positions = if positions_file.exists() {
         let f = fs::File::open(&positions_file)?;
         serde_yaml::from_reader(f).unwrap_or_default()
     } else {
@@ -820,6 +940,9 @@ fn main() -> anyhow::Result<()> {
     let shared_ops = Arc::new(Mutex::new(HashMap::new()));
     let shared_state = Arc::new(Mutex::new(HashMap::new()));
     let refresh_delay = Arc::new(Mutex::new(None));
+    let capture_keyboard = Arc::new(Mutex::new(false));
+    let capture_clicks = Arc::new(Mutex::new(false));
+    let keys_pressed = Arc::new(Mutex::new(Vec::new()));
 
     if let Some(path) = &script_path {
         let js_source = fs::read_to_string(path).expect("read script");
@@ -833,9 +956,12 @@ fn main() -> anyhow::Result<()> {
         svg_root, viewbox, svg_handle: None,
         js_context, api_proto, handle_proto, state_proto, request_proto, 
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(),
-        pointer: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
+        capture_keyboard: capture_keyboard.clone(),
+        capture_clicks: capture_clicks.clone(),
+        keys_pressed: keys_pressed.clone(),
+        pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
         exit: false, width: final_width, height: final_height, needs_redraw: true,
-        widget_name, positions_file: positions_file.clone(),
+        widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(),
         current_config: cfg,
     };
 

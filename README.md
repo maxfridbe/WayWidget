@@ -58,18 +58,19 @@ Use the provided helper script to run the examples:
 
 ## JavaScript Interaction API
 
-The system looks for a global `update(api, timestamp, click, state, request)` function.
+The system looks for a global `update(api, timestamp, click, keys, state, request)` function.
 
 - `api`: The `WidgetAPI` instance for finding elements and manipulating their attributes.
 - `timestamp`: The current time in milliseconds (useful for animations).
 - `click`: An object `{ x: number, y: number }` representing normalized coordinates (0.0 to 1.0) of the last click, or `null` if no click occurred in the last frame.
+- `keys`: An array of strings representing keys pressed since the last update.
 - `state`: A persistent `WidgetState` store that survives between `update` calls.
 - `request`: A `RefreshRequest` instance used to schedule the next update.
 
 ### Example: Interactive Sunrise (`widget.js`)
 
 ```javascript
-function update(api, timestamp, click, state, request) {
+function update(api, timestamp, click, keys, state, request) {
     let enabled = state.get("enabled") || "true";
 
     if (click) {
@@ -78,14 +79,10 @@ function update(api, timestamp, click, state, request) {
         console.log("Animation enabled:", enabled);
     }
 
+    request.localClickEvents(); // Ensure clicks are captured for the next frame
+
     if (enabled === "true") {
         request.refreshInMS(33); // Request next update in 33ms (approx 30fps)
-    }
-
-    // Rich state saving with JSON
-    let config = state.getObject("config") || { color: "#ff0000", speed: 1.0 };
-    if (enabled === "true") {
-        api.findById("sun").setAttribute("fill", config.color);
     }
 }
 ```
@@ -95,6 +92,9 @@ function update(api, timestamp, click, state, request) {
 | Method | Description |
 |--------|-------------|
 | `refreshInMS(ms)` | Requests the next `update()` call in `ms` milliseconds. Clamped to a minimum of `33ms` by the engine. |
+| `globalKeyboardEvents()` | Enables keyboard event capture for the next frame (when window is focused). |
+| `localKeyboardEvents()` | Alias for `globalKeyboardEvents()`. |
+| `localClickEvents()` | Enables mouse click capture for the next frame. |
 
 ### WidgetState API
 
@@ -105,6 +105,8 @@ function update(api, timestamp, click, state, request) {
 | `getObject(key)` | Retrieves a JSON-deserialized object. Returns `null` if not found. |
 | `setObject(key, obj)`| Serializes and stores an object as JSON. |
 | `clear(key)` | Removes a key from the persistent state. |
+| `setGlobalPersistence(key, val)` | Sets a truly global string value across all widgets (saved to `widgets_states.yml`). |
+| `getGlobalPersistence(key)` | Retrieves a global string value. |
 
 ### ElementHandle API
 

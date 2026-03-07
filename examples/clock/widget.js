@@ -1,6 +1,7 @@
-function update(api, timestamp, click, state, request) {
+function update(api, timestamp, click, keys, state, request) {
     if (request) {
         request.refreshInMS(1000); // Update every second
+        request.localClickEvents();
     }
     if (click) {
         console.log("Clock clicked at:", click.x, click.y);
