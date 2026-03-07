@@ -486,6 +486,13 @@ pub struct WayWidget {
     pub clicked_id: Option<String>,
     pub is_hovering: bool,
     
+    // Dragging/Resizing state for Layer Shell
+    pub is_dragging: bool,
+    pub is_resizing: bool,
+    pub drag_start_pos: (f64, f64),
+    pub drag_start_margin: (i32, i32),
+    pub resize_start_size: (u32, u32),
+    
     pub exit: bool,
     pub width: u32,
     pub height: u32,
@@ -735,20 +742,68 @@ impl PointerHandler for WayWidget {
             match event.kind {
                 PointerEventKind::Enter { .. } => { self.is_hovering = true; self.needs_redraw = true; }
                 PointerEventKind::Leave { .. } => { self.is_hovering = false; self.needs_redraw = true; }
-                PointerEventKind::Motion { .. } => {}
+                PointerEventKind::Motion { .. } => {
+                    if self.is_dragging {
+                        if let WidgetWindow::Layer(layer) = &self.window {
+                            let (px, py) = self.pointer_pos;
+                            let dx = (px - self.drag_start_pos.0) as i32;
+                            let dy = (py - self.drag_start_pos.1) as i32;
+                            self.current_config.x = self.drag_start_margin.0 + dx;
+                            self.current_config.y = self.drag_start_margin.1 + dy;
+                            layer.set_margin(self.current_config.y, 0, 0, self.current_config.x);
+                            layer.commit();
+                            self.save_positions();
+                        }
+                    } else if self.is_resizing {
+                        if let WidgetWindow::Layer(layer) = &self.window {
+                            let (px, py) = self.pointer_pos;
+                            let dx = (px - self.drag_start_pos.0) as i32;
+                            let dy = (py - self.drag_start_pos.1) as i32;
+                            let new_w = (self.resize_start_size.0 as i32 + dx).max(100) as u32;
+                            let new_h = (self.resize_start_size.1 as i32 + dy).max(100) as u32;
+                            if new_w != self.width || new_h != self.height {
+                                self.width = new_w;
+                                self.height = new_h;
+                                layer.set_size(new_w, new_h);
+                                layer.commit();
+                                self.save_positions();
+                                self.needs_redraw = true;
+                            }
+                        }
+                    }
+                }
                 PointerEventKind::Press { button, serial, .. } => {
                     if button == 0x110 {
                         let (px, py) = self.pointer_pos;
                         self.last_click = Some((px / self.width as f64, py / self.height as f64));
                         self.clicked_id = self.find_clicked_id(px, py);
                         self.needs_redraw = true;
-                        if let WidgetWindow::Xdg(window) = &self.window {
-                            if let Some(seat) = &self.seat {
-                                if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 { window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight); }
-                                else { window.xdg_toplevel()._move(seat, serial); }
+                        match &self.window {
+                            WidgetWindow::Xdg(window) => {
+                                if let Some(seat) = &self.seat {
+                                    if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 { window.xdg_toplevel().resize(seat, serial, ResizeEdge::BottomRight); }
+                                    else { window.xdg_toplevel()._move(seat, serial); }
+                                }
+                            }
+                            WidgetWindow::Layer(_) => {
+                                if px > self.width as f64 - 20.0 && py > self.height as f64 - 20.0 {
+                                    self.is_resizing = true;
+                                    self.drag_start_pos = (px, py);
+                                    self.resize_start_size = (self.width, self.height);
+                                } else {
+                                    self.is_dragging = true;
+                                    self.drag_start_pos = (px, py);
+                                    self.drag_start_margin = (self.current_config.x, self.current_config.y);
+                                }
                             }
                         }
                         self.draw();
+                    }
+                }
+                PointerEventKind::Release { button, .. } => {
+                    if button == 0x110 {
+                        self.is_dragging = false;
+                        self.is_resizing = false;
                     }
                 }
                 _ => {}
@@ -896,6 +951,7 @@ fn main() -> anyhow::Result<()> {
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), keys_pressed: keys_pressed.clone(),
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
+        is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
         exit: false, width: final_width, height: final_height, needs_redraw: true,
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, current_config: cfg,
     };
