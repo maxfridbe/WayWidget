@@ -74,12 +74,13 @@ sudo apt install libwayland-dev libcairo2-dev librsvg2-dev libxkbcommon-dev pkg-
 Use the provided helper script to run the examples:
 
 ```bash
+./run.sh all       # Launch all examples tiled on screen (Ctrl-C to stop)
 ./run.sh lcars     # Star Trek themed digital clock
 ./run.sh clock     # Standard analog clock
 ./run.sh sunrise   # Animated 60-second day/night cycle
 ./run.sh keyboard  # Interactive 60% mechanical keyboard visualizer
 ./run.sh warpcore  # Animated vertical reactor core with speed controls
-./run.sh ip        # Asynchronous Public IP visualizer using HTTP API
+./run.sh ip        # Asynchronous Public & Local IP visualizer
 ./run.sh lion      # Static geometric lion widget
 ```
 
@@ -93,26 +94,28 @@ The system looks for a global `update(api, timestamp, response, state, request)`
     - `click`: `{ x: number, y: number }` normalized coordinates, or `null`.
     - `keyboard`: `string[]` of keys pressed (prefixed with `+`) or released (`-`).
     - `http`: `Record<string, { status: number, body: string, error?: string }>` containing async HTTP results.
+    - `cli`: `Record<string, { output: string, error?: string }>` containing async CLI results.
 - `state`: A persistent `WidgetState` store that survives between `update` calls.
-- `request`: A `RefreshRequest` instance used to schedule the next update or trigger network calls.
+- `request`: A `RefreshRequest` instance used to schedule the next update or trigger network/system calls.
 
 ### Example: IP Visualizer (`widget.js`)
 
 ```javascript
-const URL = "https://api.ipify.org?format=json";
+const CMD = "ip address";
 
 function update(api, timestamp, response, state, request) {
     // 1. Trigger fetch on start or click
     if (state.get("last") === "" || response.click) {
-        request.jsonHttpGet(URL);
+        request.CliInvoke(CMD);
         api.findById("status").setText("Fetching...");
     }
 
     // 2. Check for async response
-    if (response.http && response.http[URL]) {
-        const res = response.http[URL];
-        if (res.status === 200) {
-            const ip = JSON.parse(res.body).ip;
+    if (response.cli && response.cli[CMD]) {
+        const res = response.cli[CMD];
+        if (!res.error) {
+            const match = res.output.match(/inet\s(\d+\.\d+\.\d+\.\d+)/);
+            const ip = match ? match[1] : "No IP";
             api.findById("status").setText(ip);
             state.set("last", ip);
         }
@@ -132,6 +135,7 @@ function update(api, timestamp, response, state, request) {
 | `localClickEvents()` | Enables mouse click capture for the next frame. |
 | `jsonHttpGet(url, headers?)` | Triggers an asynchronous JSON GET request. |
 | `jsonHttpPost(url, headers?, body?)` | Triggers an asynchronous JSON POST request. |
+| `CliInvoke(command)` | Triggers an asynchronous CLI command (must resolve in 10s). |
 
 ### WidgetState API
 
