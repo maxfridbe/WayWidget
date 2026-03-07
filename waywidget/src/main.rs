@@ -76,6 +76,10 @@ enum Commands {
         width: Option<u32>,
         #[arg(long)]
         height: Option<u32>,
+    },
+    Stop {
+        #[arg(short, long)]
+        name: String,
     }
 }
 
@@ -446,7 +450,14 @@ struct WayWidget {
     widget_name: String,
     positions_file: PathBuf,
     states_file: PathBuf,
+    pid_file: PathBuf,
     current_config: WidgetConfig,
+}
+
+impl Drop for WayWidget {
+    fn drop(&mut self) {
+        fs::remove_file(&self.pid_file).ok();
+    }
 }
 
 pub(crate) fn find_element_by_id<'a>(el: &'a mut Element, id: &str) -> Option<&'a mut Element> {
@@ -858,6 +869,25 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Could not determine project directories"))?;
     let config_dir = proj_dirs.config_dir();
     fs::create_dir_all(config_dir).ok();
+    let pids_dir = config_dir.join("pids");
+    fs::create_dir_all(&pids_dir).ok();
+
+    if let Some(Commands::Stop { name }) = &args.command {
+        let pid_file = pids_dir.join(format!("{}.pid", name));
+        if pid_file.exists() {
+            let pid_str = fs::read_to_string(&pid_file)?;
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                println!("Stopping widget '{}' (PID: {})...", name, pid);
+                unsafe {
+                    libc::kill(pid, libc::SIGTERM);
+                }
+            }
+            fs::remove_file(pid_file).ok();
+        } else {
+            println!("No instance named '{}' found.", name);
+        }
+        return Ok(());
+    }
 
     let (svg_path, script_path, width, height, widget_name) = match &args.command {
         Some(Commands::Run { widget, name, width, height }) => {
@@ -872,6 +902,7 @@ fn main() -> anyhow::Result<()> {
             let name = svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
             (svg, args.script.clone(), args.width, args.height, name)
         }
+        _ => unreachable!("Stop command should have returned early"),
     };
 
     let positions_file = config_dir.join("positions.yml");
@@ -887,6 +918,10 @@ fn main() -> anyhow::Result<()> {
     let final_width = if cfg.width > 0 { cfg.width } else { width };
     let final_height = if cfg.height > 0 { cfg.height } else { height };
     println!("Starting widget '{}' at position: {:?}, size: {}x{}", widget_name, cfg, final_width, final_height);
+
+    // Save PID
+    let pid_file = pids_dir.join(format!("{}.pid", widget_name));
+    fs::write(&pid_file, std::process::id().to_string()).ok();
 
     let conn = Connection::connect_to_env().expect("connect to wayland");
     let (globals, event_queue) = registry_queue_init::<WayWidget>(&conn).expect("registry init");
@@ -962,6 +997,7 @@ fn main() -> anyhow::Result<()> {
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, is_hovering: false,
         exit: false, width: final_width, height: final_height, needs_redraw: true,
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(),
+        pid_file: pid_file.clone(),
         current_config: cfg,
     };
 

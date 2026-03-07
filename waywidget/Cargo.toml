@@ -1,6 +1,6 @@
 [package]
 name = "waywidget"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 
 [dependencies]
@@ -14,6 +14,7 @@ clap = { version = "4.5.60", features = ["derive"] }
 directories = "6.0.0"
 gio = "0.22.2"
 glib = "0.22.2"
+libc = "0.2.182"
 librsvg = "2.62.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"

@@ -49,9 +49,16 @@ waywidget run <widget_name> [OPTIONS]
 
 | Parameter | Shorthand | Description | Default |
 |-----------|-----------|-------------|---------|
-| `--name` | `-n` | Custom instance name (for persistent config) | `<widget_name>` |
+| `--name` | `-n` | Custom instance name (for persistent config & stopping) | `<widget_name>` |
 | `--width` | - | Initial window width | `200` |
 | `--height` | - | Initial window height | `200` |
+
+### Subcommand: `stop`
+Stops a running widget instance by its name.
+
+```bash
+waywidget stop --name <instance_name>
+```
 
 ## Getting Started
 
