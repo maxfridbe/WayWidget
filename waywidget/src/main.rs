@@ -757,6 +757,7 @@ impl LayerShellHandler for WayWidget {
             self.width = new_w; self.height = new_h; self.save_positions();
         }
         self.needs_redraw = true;
+        self.draw();
     }
 }
 
@@ -821,6 +822,7 @@ impl PointerHandler for WayWidget {
                                 layer.commit();
                                 self.save_positions();
                                 self.needs_redraw = true;
+                                self.draw();
                             }
                         }
                     }
