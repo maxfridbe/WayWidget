@@ -79,6 +79,8 @@ Use the provided helper script to run the examples:
 
 ```bash
 ./run.sh all       # Launch all examples tiled on screen (Ctrl-C to stop)
+./run.sh weather   # 7-day weather forecast with ZIP caching
+./run.sh calculator # Fully functional calculator with mouse/keyboard support
 ./run.sh lcars     # Star Trek themed digital clock
 ./run.sh clock     # Standard analog clock
 ./run.sh sunrise   # Animated 60-second day/night cycle
@@ -176,6 +178,15 @@ For full typings, see [examples/widget.d.ts](examples/widget.d.ts).
 
 - **Move**: Left-click and drag anywhere on the widget to move it.
 - **Resize**: Hover over the bottom-right corner to reveal the resize handle. Left-click and drag the handle to resize the window.
+
+### Desktop Mode (`--desktop`)
+
+Desktop mode uses the **Wayland Layer Shell** protocol to place widgets in the `Bottom` layer, effectively pinning them just above your wallpaper and below all regular windows.
+
+- **Non-Tiling**: In this mode, widgets are not managed by tiling window managers (like Sway, Hyprland, or Niri). They sit statically at their assigned coordinates.
+- **Manual Movement**: Standard window manager "drag-to-move" may not work; instead, WayWidgets handles movement manually by updating surface margins when you click and drag.
+- **Persistence**: If a widget is started with the `--desktop` flag, it will remember this preference in its persistent configuration.
+- **Focus**: Desktop widgets can receive keyboard focus "on-demand" (e.g., when you click into the Calculator).
 
 ## Persistence
 
