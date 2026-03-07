@@ -77,6 +77,8 @@ Use the provided helper script to run the examples:
 ./run.sh lcars     # Star Trek themed digital clock
 ./run.sh clock     # Standard analog clock
 ./run.sh sunrise   # Animated 60-second day/night cycle
+./run.sh keyboard  # Interactive 60% mechanical keyboard visualizer
+./run.sh warpcore  # Animated vertical reactor core with speed controls
 ./run.sh lion      # Static geometric lion widget
 ```
 
