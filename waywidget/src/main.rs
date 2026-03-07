@@ -908,7 +908,7 @@ fn main() -> anyhow::Result<()> {
         );
         layer_surface.set_size(final_width, final_height);
         layer_surface.set_anchor(Anchor::TOP | Anchor::LEFT);
-        layer_surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+        layer_surface.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
         // Position via margin if provided
         layer_surface.set_margin(cfg.y, 0, 0, cfg.x);
         layer_surface.commit();

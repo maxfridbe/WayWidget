@@ -63,18 +63,21 @@ function update(api, timestamp, response, state, request) {
 
     // Handle Keyboard
     if (response.keyboard) {
-        for (const key of response.keyboard) {
+        for (let key of response.keyboard) {
+            // Remove the '+' prefix if present from engine
+            if (key.startsWith("+")) key = key.slice(1);
+            
             if (key >= "0" && key <= "9") handleInput(key);
-            else if (key === "+") handleInput("+");
-            else if (key === "-") handleInput("-");
-            else if (key === "*") handleInput("*");
-            else if (key === "/") handleInput("/");
-            else if (key === "Enter" || key === "=") handleInput("=");
+            else if (key === "+" || key === "plus") handleInput("+");
+            else if (key === "-" || key === "minus") handleInput("-");
+            else if (key === "*" || key === "asterisk") handleInput("*");
+            else if (key === "/" || key === "slash") handleInput("/");
+            else if (key === "Enter" || key === "Return" || key === "=") handleInput("=");
             else if (key === "Backspace") handleInput("back");
             else if (key === "Escape") handleInput("C");
-            else if (key === ".") handleInput(".");
-            else if (key === "(") handleInput("(");
-            else if (key === ")") handleInput(")");
+            else if (key === "." || key === "period") handleInput(".");
+            else if (key === "(" || key === "parenleft") handleInput("(");
+            else if (key === ")" || key === "parenright") handleInput(")");
         }
     }
 
