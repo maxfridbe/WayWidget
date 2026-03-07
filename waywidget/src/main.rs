@@ -487,11 +487,14 @@ pub struct WayWidget {
     pub viewbox: (f64, f64),
     pub svg_handle: Option<rsvg::SvgHandle>,
     
-    pub js_context: JsContext,
-    pub api_proto: JsObject,
-    pub handle_proto: JsObject,
-    pub state_proto: JsObject,
-    pub request_proto: JsObject,
+    pub js_context: Option<JsContext>,
+    pub api_proto: Option<JsObject>,
+    pub handle_proto: Option<JsObject>,
+    pub state_proto: Option<JsObject>,
+    pub request_proto: Option<JsObject>,
+    pub script_path: Option<PathBuf>,
+    pub last_activity: std::time::Instant,
+
     pub shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
     pub shared_state: Arc<Mutex<HashMap<String, String>>>,
     pub refresh_delay: Arc<Mutex<Option<u32>>>,
@@ -564,6 +567,47 @@ impl WayWidget {
         process_cli_queue(c_calls, self.cli_responses.clone());
     }
 
+    fn ensure_context(&mut self) {
+        if self.js_context.is_some() { return; }
+        
+        let mut js_context = JsContext::default();
+        let log_fn = NativeFunction::from_fn_ptr(|_, args, context| { 
+            for arg in args { print!("{} ", arg.to_string(context).unwrap().to_std_string().unwrap()); } 
+            println!(); Ok(JsValue::undefined()) 
+        });
+        js_context.register_global_builtin_callable(JsString::from("log_internal"), 0, log_fn).unwrap();
+        js_context.eval(Source::from_bytes("var console = { log: log_internal };".as_bytes())).unwrap();
+
+        js_context.register_global_class::<WidgetAPI>().unwrap(); 
+        js_context.register_global_class::<ElementHandle>().unwrap(); 
+        js_context.register_global_class::<WidgetState>().unwrap(); 
+        js_context.register_global_class::<RefreshRequest>().unwrap();
+        
+        self.api_proto = Some(get_proto::<WidgetAPI>(&mut js_context)); 
+        self.handle_proto = Some(get_proto::<ElementHandle>(&mut js_context)); 
+        self.state_proto = Some(get_proto::<WidgetState>(&mut js_context)); 
+        self.request_proto = Some(get_proto::<RefreshRequest>(&mut js_context));
+
+        if let Some(path) = &self.script_path {
+            if let Ok(js_source) = fs::read_to_string(path) {
+                js_context.eval(Source::from_bytes(js_source.as_bytes())).map_err(|e| println!("Error evaluating script: {}", e)).ok();
+            }
+        }
+        self.js_context = Some(js_context);
+        self.last_activity = std::time::Instant::now();
+    }
+
+    fn dispose_context(&mut self) {
+        if self.js_context.is_some() {
+            println!("Disposing of JS runtime for widget '{}' due to inactivity.", self.widget_name);
+            self.js_context = None;
+            self.api_proto = None;
+            self.handle_proto = None;
+            self.state_proto = None;
+            self.request_proto = None;
+        }
+    }
+
     fn find_clicked_id(&self, px: f64, py: f64) -> Option<String> {
         let handle = self.svg_handle.as_ref()?;
         let renderer = CairoRenderer::new(handle);
@@ -591,85 +635,92 @@ impl WayWidget {
         self.process_queues();
 
         // 2. Get JS updates
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64;
-        self.shared_ops.lock().unwrap().clear();
-        
-        let update_name = JsString::from("update");
-        let global = self.js_context.global_object();
-        if global.has_property(update_name.clone(), &mut self.js_context).unwrap_or(false) {
-            let update_func = global.get(update_name, &mut self.js_context).unwrap();
-            if let Some(func) = update_func.as_object() {
-                let api_data = WidgetAPI { ops: self.shared_ops.clone(), handle_proto: self.handle_proto.clone() };
-                let js_api = JsObject::from_proto_and_data(Some(self.api_proto.clone()), api_data);
+        if self.script_path.is_some() {
+            self.ensure_context();
+            let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as f64;
+            self.shared_ops.lock().unwrap().clear();
+            
+            let js_context = self.js_context.as_mut().unwrap();
+            let update_name = JsString::from("update");
+            let global = js_context.global_object();
+            
+            if global.has_property(update_name.clone(), js_context).unwrap_or(false) {
+                let update_func = global.get(update_name, js_context).unwrap();
+                if let Some(func) = update_func.as_object() {
+                    self.last_activity = std::time::Instant::now();
+                    
+                    let api_data = WidgetAPI { ops: self.shared_ops.clone(), handle_proto: self.handle_proto.as_ref().unwrap().clone() };
+                    let js_api = JsObject::from_proto_and_data(Some(self.api_proto.as_ref().unwrap().clone()), api_data);
 
-                let state_data = WidgetState { data: self.shared_state.clone(), states_file: self.states_file.clone() };
-                let js_state = JsObject::from_proto_and_data(Some(self.state_proto.clone()), state_data);
+                    let state_data = WidgetState { data: self.shared_state.clone(), states_file: self.states_file.clone() };
+                    let js_state = JsObject::from_proto_and_data(Some(self.state_proto.as_ref().unwrap().clone()), state_data);
 
-                let request_data = RefreshRequest { 
-                    delay_ms: self.refresh_delay.clone(),
-                    capture_keyboard: self.capture_keyboard.clone(),
-                    capture_clicks: self.capture_clicks.clone(),
-                    incoming_messages: self.incoming_messages.clone(),
-                    exit_trigger: self.exit_trigger.clone(),
-                    http_queue: self.http_queue.clone(),
-                    cli_queue: self.cli_queue.clone(),
-                };
-                let js_request = JsObject::from_proto_and_data(Some(self.request_proto.clone()), request_data);
+                    let request_data = RefreshRequest { 
+                        delay_ms: self.refresh_delay.clone(),
+                        capture_keyboard: self.capture_keyboard.clone(),
+                        capture_clicks: self.capture_clicks.clone(),
+                        incoming_messages: self.incoming_messages.clone(),
+                        exit_trigger: self.exit_trigger.clone(),
+                        http_queue: self.http_queue.clone(),
+                        cli_queue: self.cli_queue.clone(),
+                    };
+                    let js_request = JsObject::from_proto_and_data(Some(self.request_proto.as_ref().unwrap().clone()), request_data);
 
-                // Build Response Object
-                let js_response = JsObject::default(self.js_context.intrinsics());
-                
-                let clicked_id_val = self.clicked_id.take();
-                let click_val = if let Some((x, y)) = self.last_click.take() {
-                    if *self.capture_clicks.lock().unwrap() {
-                        let obj = JsObject::default(self.js_context.intrinsics());
-                        obj.set(JsString::from("x"), JsValue::new(x), true, &mut self.js_context).ok();
-                        obj.set(JsString::from("y"), JsValue::new(y), true, &mut self.js_context).ok();
-                        if let Some(id) = clicked_id_val {
-                            obj.set(JsString::from("id"), JsString::from(id), true, &mut self.js_context).ok();
+                    // Build Response Object
+                    let js_response = JsObject::default(js_context.intrinsics());
+                    
+                    let clicked_id_val = self.clicked_id.take();
+                    let click_val = if let Some((x, y)) = self.last_click.take() {
+                        if *self.capture_clicks.lock().unwrap() {
+                            let obj = JsObject::default(js_context.intrinsics());
+                            obj.set(JsString::from("x"), JsValue::new(x), true, js_context).ok();
+                            obj.set(JsString::from("y"), JsValue::new(y), true, js_context).ok();
+                            if let Some(id) = clicked_id_val {
+                                obj.set(JsString::from("id"), JsString::from(id), true, js_context).ok();
+                            }
+                            obj.into()
+                        } else { JsValue::undefined() }
+                    } else { JsValue::undefined() };
+                    js_response.set(JsString::from("click"), click_val, true, js_context).ok();
+
+                    let mut keys_vec = self.keys_pressed.lock().unwrap();
+                    let js_keyboard = boa_engine::object::builtins::JsArray::new(js_context);
+                    for key in keys_vec.drain(..) { js_keyboard.push(JsString::from(key), js_context).ok(); }
+                    js_response.set(JsString::from("keyboard"), JsValue::from(js_keyboard), true, js_context).ok();
+
+                    let js_messages = boa_engine::object::builtins::JsArray::new(js_context);
+                    if *self.incoming_messages.lock().unwrap() {
+                        let mut msg_queue = self.message_queue.lock().unwrap();
+                        for msg in msg_queue.drain(..) {
+                            js_messages.push(JsString::from(msg), js_context).ok();
                         }
-                        obj.into()
-                    } else { JsValue::undefined() }
-                } else { JsValue::undefined() };
-                js_response.set(JsString::from("click"), click_val, true, &mut self.js_context).ok();
-
-                let mut keys_vec = self.keys_pressed.lock().unwrap();
-                let js_keyboard = boa_engine::object::builtins::JsArray::new(&mut self.js_context);
-                for key in keys_vec.drain(..) { js_keyboard.push(JsString::from(key), &mut self.js_context).ok(); }
-                js_response.set(JsString::from("keyboard"), JsValue::from(js_keyboard), true, &mut self.js_context).ok();
-
-                let js_messages = boa_engine::object::builtins::JsArray::new(&mut self.js_context);
-                if *self.incoming_messages.lock().unwrap() {
-                    let mut msg_queue = self.message_queue.lock().unwrap();
-                    for msg in msg_queue.drain(..) {
-                        js_messages.push(JsString::from(msg), &mut self.js_context).ok();
                     }
-                }
-                js_response.set(JsString::from("messages"), JsValue::from(js_messages), true, &mut self.js_context).ok();
+                    js_response.set(JsString::from("messages"), JsValue::from(js_messages), true, js_context).ok();
 
-                let js_cli = JsObject::default(self.js_context.intrinsics());
-                let c_responses = self.cli_responses.lock().unwrap();
-                for (cmd, res) in c_responses.iter() {
-                    let res_obj = JsObject::default(self.js_context.intrinsics());
-                    res_obj.set(JsString::from("output"), JsString::from(res.output.clone()), true, &mut self.js_context).ok();
-                    if let Some(err) = &res.error { res_obj.set(JsString::from("error"), JsString::from(err.clone()), true, &mut self.js_context).ok(); }
-                    js_cli.set(JsString::from(cmd.clone()), JsValue::from(res_obj), true, &mut self.js_context).ok();
-                }
-                js_response.set(JsString::from("cli"), JsValue::from(js_cli), true, &mut self.js_context).ok();
+                    let js_cli = JsObject::default(js_context.intrinsics());
+                    let c_responses = self.cli_responses.lock().unwrap();
+                    for (cmd, res) in c_responses.iter() {
+                        let res_obj = JsObject::default(js_context.intrinsics());
+                        res_obj.set(JsString::from("output"), JsString::from(res.output.clone()), true, js_context).ok();
+                        if let Some(err) = &res.error { res_obj.set(JsString::from("error"), JsString::from(err.clone()), true, js_context).ok(); }
+                        js_cli.set(JsString::from(cmd.clone()), JsValue::from(res_obj), true, js_context).ok();
+                    }
+                    js_response.set(JsString::from("cli"), JsValue::from(js_cli), true, js_context).ok();
 
-                let js_http = JsObject::default(self.js_context.intrinsics());
-                let h_responses = self.http_responses.lock().unwrap();
-                for (url, res) in h_responses.iter() {
-                    let res_obj = JsObject::default(self.js_context.intrinsics());
-                    res_obj.set(JsString::from("status"), JsValue::new(res.status), true, &mut self.js_context).ok();
-                    res_obj.set(JsString::from("body"), JsString::from(res.body.clone()), true, &mut self.js_context).ok();
-                    if let Some(err) = &res.error { res_obj.set(JsString::from("error"), JsString::from(err.clone()), true, &mut self.js_context).ok(); }
-                    js_http.set(JsString::from(url.clone()), JsValue::from(res_obj), true, &mut self.js_context).ok();
+                    let js_http = JsObject::default(js_context.intrinsics());
+                    let h_responses = self.http_responses.lock().unwrap();
+                    for (url, res) in h_responses.iter() {
+                        let res_obj = JsObject::default(js_context.intrinsics());
+                        res_obj.set(JsString::from("status"), JsValue::new(res.status), true, js_context).ok();
+                        res_obj.set(JsString::from("body"), JsString::from(res.body.clone()), true, js_context).ok();
+                        if let Some(err) = &res.error { res_obj.set(JsString::from("error"), JsString::from(err.clone()), true, js_context).ok(); }
+                        js_http.set(JsString::from(url.clone()), JsValue::from(res_obj), true, js_context).ok();
+                    }
+                    js_response.set(JsString::from("http"), JsValue::from(js_http), true, js_context).ok();
+                    
+                    func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), js_response.into(), js_state.into(), js_request.into()], js_context)
+                        .map_err(|e| println!("JS Error in update(): {}", e)).ok();
                 }
-                js_response.set(JsString::from("http"), JsValue::from(js_http), true, &mut self.js_context).ok();
-                
-                func.call(&JsValue::undefined(), &[js_api.into(), JsValue::new(timestamp), js_response.into(), js_state.into(), js_request.into()], &mut self.js_context)
-                    .map_err(|e| println!("JS Error in update(): {}", e)).ok();
             }
         }
         
@@ -1045,24 +1096,22 @@ fn main() -> anyhow::Result<()> {
     let parts: Vec<f64> = viewbox_str.split_whitespace().filter_map(|s| s.parse().ok()).collect();
     let viewbox = if parts.len() == 4 { (parts[2], parts[3]) } else { (100.0, 100.0) };
 
-    let mut js_context = JsContext::default();
-    let log_fn = NativeFunction::from_fn_ptr(|_, args, context| { for arg in args { print!("{} ", arg.to_string(context).unwrap().to_std_string().unwrap()); } println!(); Ok(JsValue::undefined()) });
-    js_context.register_global_builtin_callable(JsString::from("log_internal"), 0, log_fn).unwrap();
-    js_context.eval(Source::from_bytes("var console = { log: log_internal };".as_bytes())).unwrap();
-
-    js_context.register_global_class::<WidgetAPI>().unwrap(); js_context.register_global_class::<ElementHandle>().unwrap(); js_context.register_global_class::<WidgetState>().unwrap(); js_context.register_global_class::<RefreshRequest>().unwrap();
-    
-    let api_proto = get_proto::<WidgetAPI>(&mut js_context); let handle_proto = get_proto::<ElementHandle>(&mut js_context); let state_proto = get_proto::<WidgetState>(&mut js_context); let request_proto = get_proto::<RefreshRequest>(&mut js_context);
-    
-    let shared_ops = Arc::new(Mutex::new(HashMap::new())); let shared_state = Arc::new(Mutex::new(HashMap::new())); let refresh_delay = Arc::new(Mutex::new(None)); let capture_keyboard = Arc::new(Mutex::new(false)); let capture_clicks = Arc::new(Mutex::new(false)); let keys_pressed = Arc::new(Mutex::new(Vec::new()));
-    let http_queue = Arc::new(Mutex::new(Vec::new())); let http_responses = Arc::new(Mutex::new(HashMap::new())); let cli_queue = Arc::new(Mutex::new(Vec::new())); let cli_responses = Arc::new(Mutex::new(HashMap::new()));
-
-    if let Some(path) = &script_path { let js_source = fs::read_to_string(path).expect("read script"); js_context.eval(Source::from_bytes(js_source.as_bytes())).expect("eval script"); }
+    let shared_ops = Arc::new(Mutex::new(HashMap::new())); 
+    let shared_state = Arc::new(Mutex::new(HashMap::new())); 
+    let refresh_delay = Arc::new(Mutex::new(None)); 
+    let capture_keyboard = Arc::new(Mutex::new(false)); 
+    let capture_clicks = Arc::new(Mutex::new(false)); 
+    let keys_pressed = Arc::new(Mutex::new(Vec::new()));
+    let http_queue = Arc::new(Mutex::new(Vec::new())); 
+    let http_responses = Arc::new(Mutex::new(HashMap::new())); 
+    let cli_queue = Arc::new(Mutex::new(Vec::new())); 
+    let cli_responses = Arc::new(Mutex::new(HashMap::new()));
 
     let mut app = WayWidget {
         registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state, _layer_shell_state: layer_shell_state,
         window, pool, qh: qh.clone(), svg_root, viewbox, svg_handle: None,
-        js_context, api_proto, handle_proto, state_proto, request_proto, 
+        js_context: None, api_proto: None, handle_proto: None, state_proto: None, request_proto: None, 
+        script_path, last_activity: std::time::Instant::now(),
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), incoming_messages: incoming_messages.clone(), exit_trigger: exit_trigger.clone(), keys_pressed: keys_pressed.clone(), message_queue: message_queue.clone(),
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
@@ -1095,6 +1144,10 @@ fn main() -> anyhow::Result<()> {
             app.draw();
             TimeoutAction::ToDuration(Duration::from_millis(100))
         } else {
+            // Check for inactivity (30s)
+            if app.last_activity.elapsed().as_secs() > 30 {
+                app.dispose_context();
+            }
             // Truly idle, check again in 100ms
             TimeoutAction::ToDuration(Duration::from_millis(100))
         }
