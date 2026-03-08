@@ -107,7 +107,7 @@ enum Commands {
     },
     Message {
         #[arg(short, long)]
-        name: String,
+        name: Option<String>,
         #[arg(short, long)]
         message: Option<String>,
     }
@@ -131,7 +131,7 @@ struct Positions {
 
 #[derive(Debug, Clone)]
 pub struct MessageCall {
-    pub name: String,
+    pub name: Option<String>,
     pub message: String,
 }
 
@@ -254,8 +254,21 @@ impl Class for RefreshRequest {
         class.method(JsString::from("sendMessage"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
-            let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            let message = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+            
+            let (name, message) = if args.len() >= 2 {
+                let name_val = args.get_or_undefined(0);
+                let name = if name_val.is_null() || name_val.is_undefined() {
+                    None
+                } else {
+                    Some(name_val.to_string(context)?.to_std_string().unwrap())
+                };
+                let message = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+                (name, message)
+            } else {
+                let message = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+                (None, message)
+            };
+
             request.outgoing_messages.lock().unwrap().push(MessageCall { name, message });
             Ok(JsValue::undefined())
         }));
@@ -597,15 +610,36 @@ impl WayWidget {
     fn process_messages(&mut self) {
         let m_calls = { let mut lock = self.outgoing_messages.lock().unwrap(); std::mem::take(&mut *lock) };
         for call in m_calls {
-            let socket_path = self.sockets_dir.join(format!("{}.sock", call.name));
-            if socket_path.exists() {
-                std::thread::spawn(move || {
-                    use std::os::unix::net::UnixStream;
-                    use std::io::Write;
-                    if let Ok(mut stream) = UnixStream::connect(socket_path) {
-                        let _ = stream.write_all(call.message.as_bytes());
+            if let Some(name) = call.name {
+                let socket_path = self.sockets_dir.join(format!("{}.sock", name));
+                if socket_path.exists() {
+                    let msg = call.message.clone();
+                    std::thread::spawn(move || {
+                        use std::os::unix::net::UnixStream;
+                        use std::io::Write;
+                        if let Ok(mut stream) = UnixStream::connect(socket_path) {
+                            let _ = stream.write_all(msg.as_bytes());
+                        }
+                    });
+                }
+            } else {
+                // Broadcast
+                if let Ok(entries) = fs::read_dir(&self.sockets_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("sock") {
+                            if path == self.socket_path { continue; } // Don't send to self
+                            let msg = call.message.clone();
+                            std::thread::spawn(move || {
+                                use std::os::unix::net::UnixStream;
+                                use std::io::Write;
+                                if let Ok(mut stream) = UnixStream::connect(path) {
+                                    let _ = stream.write_all(msg.as_bytes());
+                                }
+                            });
+                        }
                     }
-                });
+                }
             }
         }
     }
@@ -1012,9 +1046,7 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(Commands::Message { name, message }) = &args.command {
         let sockets_dir = config_dir.join("sockets");
-        let socket_path = sockets_dir.join(format!("{}.sock", name));
-        if !socket_path.exists() { println!("No instance named '{}' found or it doesn't support messages.", name); return Ok(()); }
-        
+
         let msg_to_send = if let Some(m) = message { m.clone() } else {
             use std::io::Read;
             let mut buffer = String::new();
@@ -1024,14 +1056,31 @@ fn main() -> anyhow::Result<()> {
 
         use std::os::unix::net::UnixStream;
         use std::io::Write;
-        if let Ok(mut stream) = UnixStream::connect(socket_path) {
-            stream.write_all(msg_to_send.as_bytes())?;
+
+        if let Some(name) = name {
+            let socket_path = sockets_dir.join(format!("{}.sock", name));
+            if !socket_path.exists() { println!("No instance named '{}' found or it doesn't support messages.", name); return Ok(()); }
+
+            if let Ok(mut stream) = UnixStream::connect(socket_path) {
+                stream.write_all(msg_to_send.as_bytes())?;
+            } else {
+                println!("Could not connect to widget '{}'.", name);
+            }
         } else {
-            println!("Could not connect to widget '{}'.", name);
+            // Broadcast to all sockets
+            if let Ok(entries) = fs::read_dir(&sockets_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("sock") {
+                        if let Ok(mut stream) = UnixStream::connect(path) {
+                            let _ = stream.write_all(msg_to_send.as_bytes());
+                        }
+                    }
+                }
+            }
         }
         return Ok(());
     }
-
     let (svg_path, script_path, width, height, widget_name, cli_pos, desktop_flag, float_flag) = match &args.command {
         Some(Commands::Run { widget, name, width, height, position, desktop, float }) => {
             let widget_dir = config_dir.join(widget);
@@ -1309,6 +1358,7 @@ mod tests {
                     state.set("key_pressed", "true");
                 }
                 request.sendMessage("other-widget", "hello from test");
+                request.sendMessage("broadcast message");
             }
         "#;
         js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
@@ -1355,8 +1405,10 @@ mod tests {
         assert_eq!(refresh_delay.lock().unwrap().unwrap(), 500);
         
         let msgs = outgoing_messages.lock().unwrap();
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].name, "other-widget");
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].name, Some("other-widget".to_string()));
         assert_eq!(msgs[0].message, "hello from test");
+        assert_eq!(msgs[1].name, None);
+        assert_eq!(msgs[1].message, "broadcast message");
     }
 }
