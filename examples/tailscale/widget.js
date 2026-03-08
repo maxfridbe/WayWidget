@@ -1,5 +1,6 @@
 const POLL_INTERVAL = 30000;
 const TS_CMD = "distrobox-host-exec tailscale status --json";
+let LAST_EXIT_CMD = "";
 
 function update(api, timestamp, response, state, request) {
     if (request) {
@@ -16,13 +17,27 @@ function update(api, timestamp, response, state, request) {
             if (id && id.startsWith("peer-card-")) {
                 let ip = id.replace("peer-card-", "");
                 request.CliInvoke("echo -n " + ip + " | distrobox-host-exec wl-copy");
-                api.findById("toast").setOpacity(1);
-                state.set("toast_at", timestamp.toString());
+                showToast(api, state, timestamp, "IP Copied: " + ip);
+            } else if (id && id.startsWith("exit-btn-")) {
+                let ip = id.replace("exit-btn-", "");
+                let cmd = "distrobox-host-exec tailscale up --exit-node=" + ip;
+                LAST_EXIT_CMD = cmd;
+                request.CliInvoke(cmd);
+                showToast(api, state, timestamp, "Setting exit node...");
             }
         }
 
+        // Check for CLI response from exit node command
+        if (LAST_EXIT_CMD && response.cli && response.cli[LAST_EXIT_CMD]) {
+            let res = response.cli[LAST_EXIT_CMD];
+            let msg = res.error ? "Error: " + res.error : "Exit node set!";
+            showToast(api, state, timestamp, msg);
+            LAST_EXIT_CMD = "";
+            request.CliInvoke(TS_CMD); // Refresh status
+        }
+
         let toastAt = parseInt(state.get("toast_at") || "0");
-        if (toastAt > 0 && timestamp - toastAt > 2000) {
+        if (toastAt > 0 && timestamp - toastAt > 3000) {
             api.findById("toast").setOpacity(0);
             state.set("toast_at", "0");
         }
@@ -41,6 +56,12 @@ function update(api, timestamp, response, state, request) {
     }
 }
 
+function showToast(api, state, timestamp, message) {
+    api.findById("toast-text-el").setText(message);
+    api.findById("toast").setOpacity(1);
+    state.set("toast_at", timestamp.toString());
+}
+
 function renderPeers(api, status) {
     // Header
     let isRunning = status.BackendState === "Running";
@@ -54,7 +75,7 @@ function renderPeers(api, status) {
     if (status.Peer) {
         for (let p in status.Peer) {
             let peer = status.Peer[p];
-            if (peer.Online) peers.push(peer);
+            if (peer.Online || peer.ExitNodeOption) peers.push(peer);
         }
     }
     
@@ -66,7 +87,9 @@ function renderPeers(api, status) {
             TailscaleIPs: self.TailscaleIPs,
             OS: self.OS,
             Online: true,
-            IsSelf: true
+            IsSelf: true,
+            CurAddr: self.CurAddr,
+            Relay: self.Relay
         });
     }
 
@@ -76,6 +99,7 @@ function renderPeers(api, status) {
     peers.slice(0, 5).forEach((peer, i) => {
         let ip = peer.TailscaleIPs[0];
         let cardId = "peer-card-" + ip;
+        let exitBtnId = "exit-btn-" + ip;
 
         // Create row group
         let row = list.appendElement("g", { transform: "translate(0, " + y + ")" });
@@ -94,7 +118,7 @@ function renderPeers(api, status) {
             cx: "16",
             cy: "22",
             r: "4",
-            class: "status-online"
+            class: peer.Online ? "status-online" : "status-offline"
         });
 
         // Hostname
@@ -110,7 +134,7 @@ function renderPeers(api, status) {
         // OS / Meta
         let connType = peer.CurAddr ? "Direct" : (peer.Relay ? "Relay (" + peer.Relay + ")" : "Offline");
         if (peer.IsSelf) connType = "This device";
-        let meta = (peer.OS || "Unknown") + " • " + connType + (peer.ExitNode ? " • Exit Node" : "");
+        let meta = (peer.OS || "Unknown") + " • " + connType + (peer.ExitNode ? " • Active Exit" : "");
         row.appendElement("text", {
             x: "28",
             y: "34",
@@ -118,14 +142,47 @@ function renderPeers(api, status) {
             style: "pointer-events: none;"
         }).setText(meta);
 
-        // IP
-        row.appendElement("text", {
-            x: "306",
-            y: "26",
-            "text-anchor": "end",
-            class: "text-ip",
-            style: "pointer-events: none;"
-        }).setText(ip);
+        // Exit Node Button
+        if (peer.ExitNodeOption && !peer.IsSelf && !peer.ExitNode) {
+            let btnG = row.appendElement("g", { id: exitBtnId });
+            btnG.appendElement("rect", {
+                width: "60",
+                height: "18",
+                x: "245",
+                y: "13",
+                rx: "9",
+                fill: "#34C759",
+                style: "cursor: pointer;"
+            });
+            btnG.appendElement("text", {
+                x: "275",
+                y: "25",
+                "font-size": "8",
+                "font-weight": "bold",
+                fill: "white",
+                "text-anchor": "middle",
+                style: "pointer-events: none;"
+            }).setText("USE EXIT");
+        } else if (peer.ExitNode) {
+            // Already active exit node
+            row.appendElement("text", {
+                x: "275",
+                y: "25",
+                "font-size": "9",
+                fill: "#34C759",
+                "text-anchor": "middle",
+                "font-weight": "bold"
+            }).setText("ACTIVE");
+        } else {
+            // Just show IP
+            row.appendElement("text", {
+                x: "306",
+                y: "26",
+                "text-anchor": "end",
+                class: "text-ip",
+                style: "pointer-events: none;"
+            }).setText(ip);
+        }
 
         y += ROW_H;
     });

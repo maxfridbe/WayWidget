@@ -29,7 +29,7 @@
 
   <!-- Toast (Hidden by default) -->
   <g id="toast" opacity="0">
-    <rect x="75" y="280" width="200" height="24" rx="12" fill="#4DA6FF" />
-    <text x="175" y="296" font-size="10" font-weight="bold" fill="white" text-anchor="middle">IP Copied to Clipboard</text>
+    <rect id="toast-bg-el" x="16" y="280" width="318" height="24" rx="12" fill="#4DA6FF" />
+    <text id="toast-text-el" x="175" y="296" font-size="10" font-weight="bold" fill="white" text-anchor="middle">IP Copied to Clipboard</text>
   </g>
 </svg>
