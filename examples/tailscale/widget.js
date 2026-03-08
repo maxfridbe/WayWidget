@@ -108,7 +108,9 @@ function renderPeers(api, status) {
         }).setText(peer.HostName);
 
         // OS / Meta
-        let meta = (peer.OS || "Unknown") + (peer.ExitNode ? " • Exit Node" : "");
+        let connType = peer.CurAddr ? "Direct" : (peer.Relay ? "Relay (" + peer.Relay + ")" : "Offline");
+        if (peer.IsSelf) connType = "This device";
+        let meta = (peer.OS || "Unknown") + " • " + connType + (peer.ExitNode ? " • Exit Node" : "");
         row.appendElement("text", {
             x: "28",
             y: "34",
