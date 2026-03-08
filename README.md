@@ -165,6 +165,7 @@ function update(api, timestamp, response, state, request) {
 | `localClickEvents()` | Enables mouse click capture for the next frame. |
 | `jsonHttpGet(url, headers?)` | Triggers an asynchronous JSON GET request. |
 | `jsonHttpPost(url, headers?, body?)` | Triggers an asynchronous JSON POST request. |
+| `sendMessage(name?, message)` | Sends a message to another widget by name. If name is omitted or `null`, the message is broadcast to all active widgets. |
 | `CliInvoke(command)` | Triggers an asynchronous CLI command (must resolve in 10s). |
 
 ### WidgetState API
