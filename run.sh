@@ -10,10 +10,12 @@ cd ..
 
 BINARY="./waywidget/target/debug/waywidget"
 
-# Check for desktop flag as second argument
+# Check for desktop or float flag as second argument
 DESKTOP_ARG=""
 if [ "$2" == "--desktop" ]; then
     DESKTOP_ARG="--desktop"
+elif [ "$2" == "--float" ]; then
+    DESKTOP_ARG="--float"
 fi
 
 # Function to run example

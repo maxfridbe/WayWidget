@@ -40,10 +40,13 @@ Point the engine at specific SVG and JS files.
 | `--height` | - | Initial window height | `200` |
 | `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
 | `--desktop` | - | Desktop mode: places widget just above the wallpaper layer | `false` |
+| `--float`   | - | Floating mode: forces a regular window, overriding saved desktop mode | `false` |
 
 ### Subcommand: `run`
 Loads a widget by convention from `~/.config/waywidget/<name>/`.
 Expects `widget.svg` and `widget.js` to exist in that directory.
+
+By default, if you point to a `widget.svg` file, the system will use the parent directory's name as the widget name for persistence.
 
 ```bash
 waywidget run <widget_name> [OPTIONS]
@@ -56,6 +59,7 @@ waywidget run <widget_name> [OPTIONS]
 | `--height` | - | Initial window height | `200` |
 | `--position`| - | Initial (x,y) position (e.g. `300,100`) | - |
 | `--desktop` | - | Desktop mode: places widget just above the wallpaper layer | `false` |
+| `--float`   | - | Floating mode: forces a regular window, overriding saved desktop mode | `false` |
 
 ### Subcommand: `stop`
 Stops a running widget instance by its name.
@@ -205,6 +209,7 @@ Desktop mode uses the **Wayland Layer Shell** protocol to place widgets in the `
 - **Non-Tiling**: In this mode, widgets are not managed by tiling window managers (like Sway, Hyprland, or Niri). They sit statically at their assigned coordinates.
 - **Manual Movement**: Standard window manager "drag-to-move" may not work; instead, WayWidgets handles movement manually by updating surface margins when you click and drag.
 - **Persistence**: If a widget is started with the `--desktop` flag, it will remember this preference in its persistent configuration.
+- **Floating Override**: You can use the `--float` flag to force a widget to open as a regular window, even if it was previously saved in desktop mode. This will also update the persistent configuration to `desktop: false`.
 - **Focus**: Desktop widgets can receive keyboard focus "on-demand" (e.g., when you click into the Calculator).
 
 ## Persistence

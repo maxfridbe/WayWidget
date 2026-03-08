@@ -80,6 +80,8 @@ struct Args {
     position: Option<String>,
     #[arg(long)]
     desktop: bool,
+    #[arg(long)]
+    float: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -96,6 +98,8 @@ enum Commands {
         position: Option<String>,
         #[arg(long)]
         desktop: bool,
+        #[arg(long)]
+        float: bool,
     },
     Stop {
         #[arg(short, long)]
@@ -989,16 +993,20 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (svg_path, script_path, width, height, widget_name, cli_pos, mut desktop) = match &args.command {
-        Some(Commands::Run { widget, name, width, height, position, desktop }) => {
+    let (svg_path, script_path, width, height, widget_name, cli_pos, desktop_flag, float_flag) = match &args.command {
+        Some(Commands::Run { widget, name, width, height, position, desktop, float }) => {
             let widget_dir = config_dir.join(widget);
             let name = name.clone().unwrap_or_else(|| widget.clone());
-            (widget_dir.join("widget.svg"), Some(widget_dir.join("widget.js")), width.unwrap_or(200), height.unwrap_or(200), name, position.clone(), *desktop)
+            (widget_dir.join("widget.svg"), Some(widget_dir.join("widget.js")), width.unwrap_or(200), height.unwrap_or(200), name, position.clone(), *desktop, *float)
         }
         None => {
             let svg = args.svg.clone().ok_or_else(|| anyhow::anyhow!("SVG path required if not using 'run'"))?;
-            let name = svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
-            (svg, args.script.clone(), args.width, args.height, name, args.position.clone(), args.desktop)
+            let name = if svg.file_stem().and_then(|s| s.to_str()) == Some("widget") {
+                svg.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("widget").to_string()
+            } else {
+                svg.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string()
+            };
+            (svg, args.script.clone(), args.width, args.height, name, args.position.clone(), args.desktop, args.float)
         }
         _ => unreachable!(),
     };
@@ -1017,7 +1025,14 @@ fn main() -> anyhow::Result<()> {
         }
     }
     
-    if cfg.desktop { desktop = true; }
+    let desktop = if desktop_flag {
+        true
+    } else if float_flag {
+        false
+    } else {
+        cfg.desktop // Use saved value if no CLI flag provided
+    };
+    cfg.desktop = desktop; // Update config with final decision
 
     let final_width = if cfg.width > 0 { cfg.width } else { width };
     let final_height = if cfg.height > 0 { cfg.height } else { height };
