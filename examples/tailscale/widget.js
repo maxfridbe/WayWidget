@@ -68,26 +68,36 @@ function updateUI(api, status) {
     let container = api.findById("peer-list");
     container.clearChildren();
 
-    let onlinePeers = [];
+    let peersToShow = [];
     if (status.Peer) {
         for (let p in status.Peer) {
             let peer = status.Peer[p];
             if (peer.Online) {
-                onlinePeers.push(peer);
+                peersToShow.push(peer);
             }
         }
     }
 
+    console.log("Tailscale Peers found: " + (status.Peer ? Object.keys(status.Peer).length : 0));
+    console.log("Online Peers: " + peersToShow.length);
+
+    // If no one is online, show everyone for debugging purposes
+    if (peersToShow.length === 0 && status.Peer) {
+        for (let p in status.Peer) {
+            peersToShow.push(status.Peer[p]);
+        }
+    }
+
     // Sort peers by hostname
-    onlinePeers.sort((a, b) => a.HostName.localeCompare(b.HostName));
-    api.findById("peers-online").setText(onlinePeers.length + " Online");
+    peersToShow.sort((a, b) => a.HostName.localeCompare(b.HostName));
+    api.findById("peers-online").setText(peersToShow.length + " Total/Online");
 
     // Render peer rows
     let yOffset = 0;
     const ROW_HEIGHT = 35;
-    const MAX_VISIBLE = 8; // Limit to 8 visible peers to fit in 400px height
+    const MAX_VISIBLE = 8; 
 
-    onlinePeers.slice(0, MAX_VISIBLE).forEach((peer, index) => {
+    peersToShow.slice(0, MAX_VISIBLE).forEach((peer, index) => {
         let peerIP = peer.TailscaleIPs[0];
         
         // Background rectangle for interaction

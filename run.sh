@@ -1,100 +1,73 @@
 #!/bin/bash
 
 # Ensure Rust is available
-source $HOME/.cargo/env
+if [ -f "$HOME/.cargo/env" ]; then
+    source "$HOME/.cargo/env"
+fi
 
 # Build the project
+echo "Building WayWidget..."
 cd waywidget
-cargo build
+cargo build --quiet
 cd ..
 
 BINARY="./waywidget/target/debug/waywidget"
 
-# Check for desktop or float flag as second argument
-DESKTOP_ARG=""
-if [ "$2" == "--desktop" ]; then
-    DESKTOP_ARG="--desktop"
-elif [ "$2" == "--float" ]; then
-    DESKTOP_ARG="--float"
+# Setup config directory if it doesn't exist (copy examples)
+CONFIG_DIR="$HOME/.config/waywidget"
+if [ ! -d "$CONFIG_DIR" ]; then
+    echo "Initializing config directory in $CONFIG_DIR..."
+    mkdir -p "$CONFIG_DIR"
+    cp -r examples/* "$CONFIG_DIR/"
 fi
-
-# Function to run example
-run_example() {
-    local name=$1
-    local svg=$2
-    local script=$3
-    local w=$4
-    local h=$5
-    echo "Running example: $name"
-    local cmd="$BINARY --svg $svg --width $w --height $h $DESKTOP_ARG"
-    if [ -n "$script" ]; then
-        cmd="$cmd --script $script"
-    fi
-    $cmd
-}
 
 # Select example
 EXAMPLE=${1:-lcars}
+SHIFT_ARGS="${@:2}"
 
 case $EXAMPLE in
     "all")
-        echo "Launching all widgets..."
-        # Left side
-        $BINARY --svg examples/lcars_clock/widget.svg --script examples/lcars_clock/widget.js --width 600 --height 300 --position 50,50 $DESKTOP_ARG &
-        PID1=$!
-        $BINARY --svg examples/ip_visualizer/widget.svg --script examples/ip_visualizer/widget.js --width 350 --height 200 --position 50,400 $DESKTOP_ARG &
-        PID2=$!
+        echo "Launching workspace..."
+        $BINARY run lcars_clock --width 600 --height 300 $SHIFT_ARGS &
+        $BINARY run ip_visualizer --width 350 --height 200 $SHIFT_ARGS &
+        $BINARY run sunrise --width 800 --height 450 $SHIFT_ARGS &
+        $BINARY run clock --width 200 --height 200 $SHIFT_ARGS &
+        $BINARY run keyboard --width 820 --height 350 $SHIFT_ARGS &
+        $BINARY run warpcore --width 150 --height 400 $SHIFT_ARGS &
+        $BINARY run weather --width 700 --height 220 $SHIFT_ARGS &
+        $BINARY run tailscale --width 300 --height 60 $SHIFT_ARGS &
         
-        # Middle
-        $BINARY --svg examples/sunrise/widget.svg --script examples/sunrise/widget.js --width 800 --height 450 --position 700,50 $DESKTOP_ARG &
-        PID3=$!
-        $BINARY --svg examples/clock/clock.svg --script examples/clock/widget.js --width 200 --height 200 --position 700,550 $DESKTOP_ARG &
-        PID4=$!
-
-        # Right side
-        $BINARY --svg examples/keyboard/widget.svg --script examples/keyboard/widget.js --width 820 --height 350 --position 1550,50 $DESKTOP_ARG &
-        PID5=$!
-        $BINARY --svg examples/warpcore/widget.svg --script examples/warpcore/widget.js --width 150 --height 400 --position 1550,450 $DESKTOP_ARG &
-        PID6=$!
-
-        # Weather
-        $BINARY --svg examples/weather/widget.svg --script examples/weather/widget.js --width 700 --height 220 --position 700,800 $DESKTOP_ARG &
-        PID7=$!
-
-        trap "kill $PID1 $PID2 $PID3 $PID4 $PID5 $PID6 $PID7; exit" INT TERM
-        wait
+        echo "All widgets launched. Use 'waywidget stop --name <name>' to close them."
         ;;
-    "weather")
-        run_example "Weather Forecast" "examples/weather/widget.svg" "examples/weather/widget.js" 700 220
-        ;;
-    "calculator")
-        run_example "Calculator" "examples/calculator/widget.svg" "examples/calculator/widget.js" 250 350
-        ;;
-    "clock")
-        run_example "Analog Clock" "examples/clock/clock.svg" "examples/clock/widget.js" 200 200
-        ;;
-    "lcars")
-        run_example "LCARS Clock" "examples/lcars_clock/widget.svg" "examples/lcars_clock/widget.js" 600 300
-        ;;
-    "sunrise")
-        run_example "Sunrise Cycle" "examples/sunrise/widget.svg" "examples/sunrise/widget.js" 800 450
-        ;;
-    "keyboard")
-        run_example "Keyboard Visualizer" "examples/keyboard/widget.svg" "examples/keyboard/widget.js" 820 350
-        ;;
-    "warpcore")
-        run_example "Warp Core" "examples/warpcore/widget.svg" "examples/warpcore/widget.js" 150 400
-        ;;
-    "ip")
-        run_example "IP Visualizer" "examples/ip_visualizer/widget.svg" "examples/ip_visualizer/widget.js" 350 200
-        ;;
-    "lion")
-        run_example "Static Lion" "examples/lion/widget.svg" "" 200 200
-        ;;
-    "fox")
-        run_example "Animated Fox" "examples/fox/widget.svg" "examples/fox/widget.js" 300 200
+    "install")
+        echo "Updating examples in $CONFIG_DIR..."
+        cp -r examples/* "$CONFIG_DIR/"
         ;;
     *)
-        echo "Usage: ./run.sh [all|clock|lcars|sunrise|keyboard|warpcore|ip|lion|fox|calculator] [--desktop|--float]"
+        # Check if it's a known example
+        if [ -d "examples/$EXAMPLE" ]; then
+            # Ensure it's in config dir for 'run' command to work
+            mkdir -p "$CONFIG_DIR/$EXAMPLE"
+            cp -r examples/$EXAMPLE/* "$CONFIG_DIR/$EXAMPLE/"
+            
+            # Default sizes for known widgets
+            WIDTH=200
+            HEIGHT=200
+            case $EXAMPLE in
+                "lcars_clock") WIDTH=600; HEIGHT=300 ;;
+                "weather") WIDTH=700; HEIGHT=220 ;;
+                "keyboard") WIDTH=820; HEIGHT=350 ;;
+                "warpcore") WIDTH=150; HEIGHT=400 ;;
+                "ip_visualizer") WIDTH=350; HEIGHT=200 ;;
+                "sunrise") WIDTH=800; HEIGHT=450 ;;
+                "tailscale") WIDTH=300; HEIGHT=60 ;;
+            esac
+            
+            echo "Running $EXAMPLE..."
+            $BINARY run "$EXAMPLE" --width $WIDTH --height $HEIGHT $SHIFT_ARGS
+        else
+            echo "Usage: ./run.sh [all|install|<widget_name>] [--desktop|--float|--position x,y]"
+            echo "Available widgets: $(ls examples/ | grep -v '\.d\.ts' | grep -v '\.svg' | tr '\n' ' ')"
+        fi
         ;;
-    esac
+esac

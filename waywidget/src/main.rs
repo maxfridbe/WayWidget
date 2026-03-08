@@ -280,7 +280,7 @@ impl Class for RefreshRequest {
 struct ElementHandle {
     id: String,
     #[unsafe_ignore_trace]
-    ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
+    ops: Arc<Mutex<Vec<(String, SvgOp)>>>,
 }
 
 impl Class for ElementHandle {
@@ -295,7 +295,7 @@ impl Class for ElementHandle {
             let angle = args.get_or_undefined(0).as_number().unwrap_or(0.0);
             let cx = args.get_or_undefined(1).as_number().unwrap_or(50.0);
             let cy = args.get_or_undefined(2).as_number().unwrap_or(50.0);
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetRotation { angle, cx, cy });
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetRotation { angle, cx, cy }));
             Ok(this.clone())
         }));
         class.method(JsString::from("setTranslation"), 2, NativeFunction::from_fn_ptr(|this, args, _context| {
@@ -303,21 +303,21 @@ impl Class for ElementHandle {
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let x = args.get_or_undefined(0).as_number().unwrap_or(0.0);
             let y = args.get_or_undefined(1).as_number().unwrap_or(0.0);
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetTranslation { x, y });
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetTranslation { x, y }));
             Ok(this.clone())
         }));
         class.method(JsString::from("setScale"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let factor = args.get_or_undefined(0).as_number().unwrap_or(1.0);
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetScale { factor });
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetScale { factor }));
             Ok(this.clone())
         }));
         class.method(JsString::from("setText"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let text = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetText(text));
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetText(text)));
             Ok(this.clone())
         }));
         class.method(JsString::from("setAttribute"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
@@ -325,35 +325,35 @@ impl Class for ElementHandle {
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let value = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetAttribute { name, value });
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetAttribute { name, value }));
             Ok(this.clone())
         }));
         class.method(JsString::from("setVisible"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let visible = args.get_or_undefined(0).as_boolean().unwrap_or(true);
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetVisible(visible));
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetVisible(visible)));
             Ok(this.clone())
         }));
         class.method(JsString::from("setOpacity"), 1, NativeFunction::from_fn_ptr(|this, args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let opacity = args.get_or_undefined(0).as_number().unwrap_or(1.0);
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::SetOpacity(opacity));
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::SetOpacity(opacity)));
             Ok(this.clone())
         }));
         class.method(JsString::from("addClass"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let class_name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::AddClass(class_name));
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::AddClass(class_name)));
             Ok(this.clone())
         }));
         class.method(JsString::from("removeClass"), 1, NativeFunction::from_fn_ptr(|this, args, context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
             let class_name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::RemoveClass(class_name));
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::RemoveClass(class_name)));
             Ok(this.clone())
         }));
         class.method(JsString::from("appendElement"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
@@ -368,19 +368,19 @@ impl Class for ElementHandle {
                 let val_str = attr_obj.get(key, context)?.to_string(context)?.to_std_string().unwrap();
                 attributes.insert(key_str, val_str);
             }
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::AppendElement { tag, attributes });
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::AppendElement { tag, attributes }));
             Ok(this.clone())
         }));
         class.method(JsString::from("clearChildren"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::ClearChildren);
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::ClearChildren));
             Ok(this.clone())
         }));
         class.method(JsString::from("remove"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let handle = obj.downcast_mut::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not an ElementHandle").into()))?;
-            handle.ops.lock().unwrap().entry(handle.id.clone()).or_default().push(SvgOp::Remove);
+            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::Remove));
             Ok(JsValue::undefined())
         }));
         Ok(())
@@ -390,7 +390,7 @@ impl Class for ElementHandle {
 #[derive(Clone, Trace, Finalize, JsData)]
 struct WidgetAPI {
     #[unsafe_ignore_trace]
-    ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
+    ops: Arc<Mutex<Vec<(String, SvgOp)>>>,
     #[unsafe_ignore_trace]
     handle_proto: JsObject,
 }
@@ -528,7 +528,7 @@ pub struct WayWidget {
     pub script_path: Option<PathBuf>,
     pub last_activity: std::time::Instant,
 
-    pub shared_ops: Arc<Mutex<HashMap<String, Vec<SvgOp>>>>,
+    pub shared_ops: Arc<Mutex<Vec<(String, SvgOp)>>>,
     pub shared_state: Arc<Mutex<HashMap<String, String>>>,
     pub refresh_delay: Arc<Mutex<Option<u32>>>,
     pub capture_keyboard: Arc<Mutex<bool>>,
@@ -801,7 +801,7 @@ impl WayWidget {
             }
         }
         
-        let ops = self.shared_ops.lock().unwrap().clone();
+        let ops = { let mut lock = self.shared_ops.lock().unwrap(); std::mem::take(&mut *lock) };
         let has_ops = !ops.is_empty();
 
         if has_ops || self.svg_handle.is_none() {
@@ -1205,7 +1205,7 @@ fn main() -> anyhow::Result<()> {
     let parts: Vec<f64> = viewbox_str.split_whitespace().filter_map(|s| s.parse().ok()).collect();
     let viewbox = if parts.len() == 4 { (parts[2], parts[3]) } else { (100.0, 100.0) };
 
-    let shared_ops = Arc::new(Mutex::new(HashMap::new())); 
+    let shared_ops = Arc::new(Mutex::new(Vec::new())); 
     let shared_state = Arc::new(Mutex::new(HashMap::new())); 
     let refresh_delay = Arc::new(Mutex::new(None)); 
     let capture_keyboard = Arc::new(Mutex::new(false)); 
@@ -1283,8 +1283,9 @@ mod tests {
     fn test_class_management() {
         let svg = r#"<svg><rect id="test" class="foo bar" /></svg>"#;
         let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
-        ops.insert("test".to_string(), vec![SvgOp::AddClass("baz".to_string()), SvgOp::RemoveClass("foo".to_string())]);
+        let mut ops = Vec::new();
+        ops.push(("test".to_string(), SvgOp::AddClass("baz".to_string())));
+        ops.push(("test".to_string(), SvgOp::RemoveClass("foo".to_string())));
         apply_ops_to_svg(&mut root, ops);
         let el = find_element_by_id(&mut root, "test").unwrap();
         let classes = el.attributes.get("class").unwrap();
@@ -1295,8 +1296,9 @@ mod tests {
     fn test_visibility_and_opacity() {
         let svg = r#"<svg><rect id="test" /></svg>"#;
         let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
-        ops.insert("test".to_string(), vec![SvgOp::SetVisible(false), SvgOp::SetOpacity(0.5)]);
+        let mut ops = Vec::new();
+        ops.push(("test".to_string(), SvgOp::SetVisible(false)));
+        ops.push(("test".to_string(), SvgOp::SetOpacity(0.5)));
         apply_ops_to_svg(&mut root, ops);
         let el = find_element_by_id(&mut root, "test").unwrap();
         assert_eq!(el.attributes.get("display").unwrap(), "none"); assert_eq!(el.attributes.get("opacity").unwrap(), "0.5");
@@ -1306,13 +1308,14 @@ mod tests {
     fn test_append_element_and_clear() {
         let svg = r#"<svg><g id="container"></g></svg>"#;
         let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
+        let mut ops = Vec::new();
         let mut attrs = HashMap::new(); attrs.insert("id".to_string(), "child".to_string());
-        ops.insert("container".to_string(), vec![SvgOp::AppendElement { tag: "circle".to_string(), attributes: attrs }]);
+        ops.push(("container".to_string(), SvgOp::AppendElement { tag: "circle".to_string(), attributes: attrs }));
         apply_ops_to_svg(&mut root, ops);
         assert!(find_element_by_id(&mut root, "child").is_some());
-        let mut ops2 = HashMap::new();
-        ops2.insert("container".to_string(), vec![SvgOp::ClearChildren]);
+        
+        let mut ops2 = Vec::new();
+        ops2.push(("container".to_string(), SvgOp::ClearChildren));
         apply_ops_to_svg(&mut root, ops2);
         assert!(find_element_by_id(&mut root, "child").is_none());
     }
@@ -1321,8 +1324,8 @@ mod tests {
     fn test_remove_element() {
         let svg = r#"<svg><rect id="to-remove" /></svg>"#;
         let mut root = Element::parse(svg.as_bytes()).unwrap();
-        let mut ops = HashMap::new();
-        ops.insert("to-remove".to_string(), vec![SvgOp::Remove]);
+        let mut ops = Vec::new();
+        ops.push(("to-remove".to_string(), SvgOp::Remove));
         apply_ops_to_svg(&mut root, ops);
         assert!(find_element_by_id(&mut root, "to-remove").is_none());
     }
@@ -1342,7 +1345,7 @@ mod tests {
         let state_proto = get_proto::<WidgetState>(&mut js_context);
         let request_proto = get_proto::<crate::RefreshRequest>(&mut js_context);
         
-        let shared_ops = Arc::new(Mutex::new(HashMap::new()));
+        let shared_ops = Arc::new(Mutex::new(Vec::new()));
         let shared_state = Arc::new(Mutex::new(HashMap::new()));
         let refresh_delay = Arc::new(Mutex::new(None));
         let capture_keyboard = Arc::new(Mutex::new(false));
@@ -1392,7 +1395,7 @@ mod tests {
             &mut js_context
         ).unwrap();
 
-        let ops = shared_ops.lock().unwrap().clone();
+        let ops = { let mut lock = shared_ops.lock().unwrap(); std::mem::take(&mut *lock) };
         apply_ops_to_svg(&mut root, ops);
 
         let rect = find_element_by_id(&mut root, "rect1").unwrap();
