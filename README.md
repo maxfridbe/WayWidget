@@ -108,6 +108,7 @@ Use the provided helper script to run the examples:
 ./run.sh warpcore  # Animated vertical reactor core with speed controls
 ./run.sh ip        # Asynchronous Public & Local IP visualizer
 ./run.sh lion      # Static geometric lion widget
+./run.sh fox       # Animated running fox widget
 ```
 
 ## JavaScript Interaction API

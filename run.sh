@@ -91,7 +91,10 @@ case $EXAMPLE in
     "lion")
         run_example "Static Lion" "examples/lion/widget.svg" "" 200 200
         ;;
-    *)
-        echo "Usage: ./run.sh [all|clock|lcars|sunrise|keyboard|warpcore|ip|lion|calculator] [--desktop]"
+    "fox")
+        run_example "Animated Fox" "examples/fox/widget.svg" "examples/fox/widget.js" 300 200
         ;;
-esac
+    *)
+        echo "Usage: ./run.sh [all|clock|lcars|sunrise|keyboard|warpcore|ip|lion|fox|calculator] [--desktop|--float]"
+        ;;
+    esac
