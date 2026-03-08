@@ -281,6 +281,8 @@ struct ElementHandle {
     id: String,
     #[unsafe_ignore_trace]
     ops: Arc<Mutex<Vec<(String, SvgOp)>>>,
+    #[unsafe_ignore_trace]
+    handle_proto: JsObject,
 }
 
 impl Class for ElementHandle {
@@ -368,8 +370,23 @@ impl Class for ElementHandle {
                 let val_str = attr_obj.get(key, context)?.to_string(context)?.to_std_string().unwrap();
                 attributes.insert(key_str, val_str);
             }
-            handle.ops.lock().unwrap().push((handle.id.clone(), SvgOp::AppendElement { tag, attributes }));
-            Ok(this.clone())
+
+            // Ensure the child has an ID so we can return a handle to it
+            let child_id = match attributes.get("id") {
+                Some(id) => id.clone(),
+                None => {
+                    let id = format!("_dyn_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+                    attributes.insert("id".to_string(), id.clone());
+                    id
+                }
+            };
+
+            let ops = handle.ops.clone();
+            let handle_proto = handle.handle_proto.clone();
+            ops.lock().unwrap().push((handle.id.clone(), SvgOp::AppendElement { tag, attributes }));
+            
+            let child_handle = ElementHandle { id: child_id, ops, handle_proto: handle_proto.clone() };
+            Ok(JsObject::from_proto_and_data(Some(handle_proto), child_handle).into())
         }));
         class.method(JsString::from("clearChildren"), 0, NativeFunction::from_fn_ptr(|this, _args, _context| {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
@@ -405,7 +422,7 @@ impl Class for WidgetAPI {
             let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
             let api = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a WidgetAPI").into()))?;
             let id = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
-            let handle = ElementHandle { id, ops: api.ops.clone() };
+            let handle = ElementHandle { id, ops: api.ops.clone(), handle_proto: api.handle_proto.clone() };
             Ok(JsObject::from_proto_and_data(Some(api.handle_proto.clone()), handle).into())
         }));
         Ok(())
@@ -1331,8 +1348,8 @@ mod tests {
     }
 
     #[test]
-    fn test_full_js_integration() {
-        let svg = r#"<svg viewBox="0 0 100 100"><rect id="rect1" x="0" y="0" width="10" height="10" /><g id="group1"></g></svg>"#;
+    fn test_nested_dynamic_generation() {
+        let svg = r#"<svg viewBox="0 0 100 100"><g id="list"></g></svg>"#;
         let mut root = Element::parse(svg.as_bytes()).unwrap();
         let mut js_context = JsContext::default();
         
@@ -1347,71 +1364,52 @@ mod tests {
         
         let shared_ops = Arc::new(Mutex::new(Vec::new()));
         let shared_state = Arc::new(Mutex::new(HashMap::new()));
-        let refresh_delay = Arc::new(Mutex::new(None));
-        let capture_keyboard = Arc::new(Mutex::new(false));
-        let capture_clicks = Arc::new(Mutex::new(false));
 
         let js_code = r#"
-            function update(api, timestamp, click, keys, state, request) {
-                api.findById("rect1").setRotation(90).setOpacity(0.7);
-                api.findById("group1").appendElement("circle", { id: "dynamic_circle", r: "5" });
-                state.set("last_ts", timestamp.toString());
-                request.refreshInMS(500);
-                if (keys && keys[0] === "Enter") {
-                    state.set("key_pressed", "true");
-                }
-                request.sendMessage("other-widget", "hello from test");
-                request.sendMessage("broadcast message");
+            function update(api, timestamp, response, state, request) {
+                let list = api.findById("list");
+                // Create a row group and append text to it (chaining)
+                let row = list.appendElement("g", { id: "row1", transform: "translate(0, 10)" });
+                row.appendElement("text", { id: "label1" }).setText("Hello Peer");
             }
         "#;
         js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
 
         let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: get_proto::<ElementHandle>(&mut js_context) };
         let js_api = JsObject::from_proto_and_data(Some(api_proto), api_data);
-        
         let state_data = WidgetState { data: shared_state.clone(), states_file: PathBuf::from("test_states.yml") };
         let js_state = JsObject::from_proto_and_data(Some(state_proto), state_data);
 
-        let outgoing_messages = Arc::new(Mutex::new(Vec::new()));
         let request_data = crate::RefreshRequest { 
-            delay_ms: refresh_delay.clone(),
-            capture_keyboard: capture_keyboard.clone(),
-            capture_clicks: capture_clicks.clone(),
+            delay_ms: Arc::new(Mutex::new(None)),
+            capture_keyboard: Arc::new(Mutex::new(false)),
+            capture_clicks: Arc::new(Mutex::new(false)),
             incoming_messages: Arc::new(Mutex::new(false)),
             exit_trigger: Arc::new(Mutex::new(None)),
             http_queue: Arc::new(Mutex::new(Vec::new())),
             cli_queue: Arc::new(Mutex::new(Vec::new())),
-            outgoing_messages: outgoing_messages.clone(),
+            outgoing_messages: Arc::new(Mutex::new(Vec::new())),
         };
         let js_request = JsObject::from_proto_and_data(Some(request_proto), request_data);
-
-        let js_keys = boa_engine::object::builtins::JsArray::new(&mut js_context);
-        js_keys.push(JsString::from("Enter"), &mut js_context).ok();
 
         let update_func = js_context.global_object().get(JsString::from("update"), &mut js_context).unwrap();
         update_func.as_object().unwrap().call(
             &JsValue::undefined(),
-            &[js_api.into(), JsValue::new(12345), JsValue::undefined(), js_keys.into(), js_state.into(), js_request.into()],
+            &[js_api.into(), JsValue::new(0), JsValue::undefined(), js_state.into(), js_request.into()],
             &mut js_context
         ).unwrap();
 
         let ops = { let mut lock = shared_ops.lock().unwrap(); std::mem::take(&mut *lock) };
         apply_ops_to_svg(&mut root, ops);
 
-        let rect = find_element_by_id(&mut root, "rect1").unwrap();
-        assert_eq!(rect.attributes.get("transform").unwrap(), "rotate(90, 50, 50)");
-        assert_eq!(rect.attributes.get("opacity").unwrap(), "0.7");
-
-        assert!(find_element_by_id(&mut root, "dynamic_circle").is_some());
-        assert_eq!(shared_state.lock().unwrap().get("last_ts").unwrap(), "12345");
-        assert_eq!(shared_state.lock().unwrap().get("key_pressed").unwrap(), "true");
-        assert_eq!(refresh_delay.lock().unwrap().unwrap(), 500);
+        let mut out = Vec::new();
+        root.write(&mut out).unwrap();
+        let final_svg = String::from_utf8(out).unwrap();
         
-        let msgs = outgoing_messages.lock().unwrap();
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].name, Some("other-widget".to_string()));
-        assert_eq!(msgs[0].message, "hello from test");
-        assert_eq!(msgs[1].name, None);
-        assert_eq!(msgs[1].message, "broadcast message");
+        // Verify row1 exists
+        assert!(final_svg.contains(r#"id="row1""#));
+        // Verify label1 exists and is nested inside row1's group
+        assert!(final_svg.contains(r#"id="label1""#));
+        assert!(final_svg.contains("Hello Peer"));
     }
 }

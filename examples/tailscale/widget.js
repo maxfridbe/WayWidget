@@ -77,7 +77,7 @@ function renderPeers(api, status) {
         let ip = peer.TailscaleIPs[0];
         let cardId = "peer-card-" + ip;
 
-        // Group for the row
+        // Create row group
         let row = list.appendElement("g", { transform: "translate(0, " + y + ")" });
         
         // Background card

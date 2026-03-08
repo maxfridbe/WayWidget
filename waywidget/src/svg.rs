@@ -31,27 +31,6 @@ pub fn find_element_by_id<'a>(el: &'a mut Element, id: &str) -> Option<&'a mut E
     None
 }
 
-/// Specialized version that returns both the parent and the child index.
-/// Useful for operations that need to modify the parent's children list.
-pub fn find_element_and_parent_by_id<'a>(el: &'a mut Element, id: &str) -> Option<(&'a mut Element, usize)> {
-    for i in 0..el.children.len() {
-        if let Some(child_el) = el.children[i].as_element() {
-            if child_el.attributes.get("id").map(|s| s.as_str()) == Some(id) {
-                return Some((el, i));
-            }
-        }
-    }
-    
-    for child in &mut el.children {
-        if let Some(e) = child.as_mut_element() {
-            if let Some(res) = find_element_and_parent_by_id(e, id) {
-                return Some(res);
-            }
-        }
-    }
-    None
-}
-
 pub fn remove_element_by_id(el: &mut Element, id: &str) -> bool {
     let mut to_remove = None;
     for (i, child) in el.children.iter().enumerate() {
