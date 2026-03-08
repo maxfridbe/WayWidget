@@ -228,6 +228,14 @@ interface RefreshRequest {
      * @param body The string body to send.
      */
     jsonHttpPost(url: string, headers?: Record<string, string>, body?: string): void;
+
+    /**
+     * Sends a message to another widget by name.
+     * Works similarly to `waywidget message --name <name> --message <message>`.
+     * @param name The name of the target widget.
+     * @param message The message to send.
+     */
+    sendMessage(name: string, message: string): void;
 }
 
 /**

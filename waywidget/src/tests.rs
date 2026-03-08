@@ -133,6 +133,11 @@ mod tests {
             delay_ms: refresh_delay.clone(),
             capture_keyboard: capture_keyboard.clone(),
             capture_clicks: capture_clicks.clone(),
+            incoming_messages: Arc::new(Mutex::new(false)),
+            exit_trigger: Arc::new(Mutex::new(None)),
+            http_queue: Arc::new(Mutex::new(Vec::new())),
+            cli_queue: Arc::new(Mutex::new(Vec::new())),
+            outgoing_messages: Arc::new(Mutex::new(Vec::new())),
         };
         let js_request = JsObject::from_proto_and_data(Some(request_proto), request_data);
 

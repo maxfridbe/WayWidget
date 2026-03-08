@@ -129,6 +129,12 @@ struct Positions {
     widgets: HashMap<String, WidgetConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MessageCall {
+    pub name: String,
+    pub message: String,
+}
+
 #[derive(Clone, Trace, Finalize, JsData)]
 struct RefreshRequest {
     #[unsafe_ignore_trace]
@@ -145,6 +151,8 @@ struct RefreshRequest {
     http_queue: Arc<Mutex<Vec<HttpCall>>>,
     #[unsafe_ignore_trace]
     cli_queue: Arc<Mutex<Vec<CliCall>>>,
+    #[unsafe_ignore_trace]
+    outgoing_messages: Arc<Mutex<Vec<MessageCall>>>,
 }
 
 impl Class for RefreshRequest {
@@ -241,6 +249,14 @@ impl Class for RefreshRequest {
             let msg = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
             let mut trigger = request.exit_trigger.lock().unwrap();
             *trigger = Some(msg);
+            Ok(JsValue::undefined())
+        }));
+        class.method(JsString::from("sendMessage"), 2, NativeFunction::from_fn_ptr(|this, args, context| {
+            let obj = this.as_object().ok_or_else(|| JsError::from_opaque(JsString::from("Not an object").into()))?;
+            let request = obj.downcast_ref::<Self>().ok_or_else(|| JsError::from_opaque(JsString::from("Not a RefreshRequest").into()))?;
+            let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap();
+            let message = args.get_or_undefined(1).to_string(context)?.to_std_string().unwrap();
+            request.outgoing_messages.lock().unwrap().push(MessageCall { name, message });
             Ok(JsValue::undefined())
         }));
         Ok(())
@@ -513,6 +529,8 @@ pub struct WayWidget {
     pub http_responses: Arc<Mutex<HashMap<String, HttpResult>>>,
     pub cli_queue: Arc<Mutex<Vec<CliCall>>>,
     pub cli_responses: Arc<Mutex<HashMap<String, CliResult>>>,
+    pub outgoing_messages: Arc<Mutex<Vec<MessageCall>>>,
+    pub sockets_dir: PathBuf,
 
     pub pointer: Option<wl_pointer::WlPointer>,
     pub keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -572,6 +590,24 @@ impl WayWidget {
 
         let c_calls = { let mut lock = self.cli_queue.lock().unwrap(); std::mem::take(&mut *lock) };
         process_cli_queue(c_calls, self.cli_responses.clone(), self.loop_signal.clone());
+
+        self.process_messages();
+    }
+
+    fn process_messages(&mut self) {
+        let m_calls = { let mut lock = self.outgoing_messages.lock().unwrap(); std::mem::take(&mut *lock) };
+        for call in m_calls {
+            let socket_path = self.sockets_dir.join(format!("{}.sock", call.name));
+            if socket_path.exists() {
+                std::thread::spawn(move || {
+                    use std::os::unix::net::UnixStream;
+                    use std::io::Write;
+                    if let Ok(mut stream) = UnixStream::connect(socket_path) {
+                        let _ = stream.write_all(call.message.as_bytes());
+                    }
+                });
+            }
+        }
     }
 
     fn ensure_context(&mut self) {
@@ -662,7 +698,7 @@ impl WayWidget {
                     let state_data = WidgetState { data: self.shared_state.clone(), states_file: self.states_file.clone() };
                     let js_state = JsObject::from_proto_and_data(Some(self.state_proto.as_ref().unwrap().clone()), state_data);
 
-                    let request_data = RefreshRequest { 
+                    let request_data = RefreshRequest {
                         delay_ms: self.refresh_delay.clone(),
                         capture_keyboard: self.capture_keyboard.clone(),
                         capture_clicks: self.capture_clicks.clone(),
@@ -670,8 +706,8 @@ impl WayWidget {
                         exit_trigger: self.exit_trigger.clone(),
                         http_queue: self.http_queue.clone(),
                         cli_queue: self.cli_queue.clone(),
-                    };
-                    let js_request = JsObject::from_proto_and_data(Some(self.request_proto.as_ref().unwrap().clone()), request_data);
+                        outgoing_messages: self.outgoing_messages.clone(),
+                    };                    let js_request = JsObject::from_proto_and_data(Some(self.request_proto.as_ref().unwrap().clone()), request_data);
 
                     // Build Response Object
                     let js_response = JsObject::default(js_context.intrinsics());
@@ -1130,6 +1166,7 @@ fn main() -> anyhow::Result<()> {
     let http_responses = Arc::new(Mutex::new(HashMap::new())); 
     let cli_queue = Arc::new(Mutex::new(Vec::new())); 
     let cli_responses = Arc::new(Mutex::new(HashMap::new()));
+    let outgoing_messages = Arc::new(Mutex::new(Vec::new()));
 
     let mut app = WayWidget {
         registry_state, seat_state, output_state, _compositor_state: compositor_state, _shm_state: shm_state, _xdg_shell_state: xdg_shell_state, _layer_shell_state: layer_shell_state,
@@ -1137,7 +1174,7 @@ fn main() -> anyhow::Result<()> {
         js_context: None, api_proto: None, handle_proto: None, state_proto: None, request_proto: None, 
         script_path, last_activity: std::time::Instant::now(),
         shared_ops, shared_state, refresh_delay: refresh_delay.clone(), capture_keyboard: capture_keyboard.clone(), capture_clicks: capture_clicks.clone(), incoming_messages: incoming_messages.clone(), exit_trigger: exit_trigger.clone(), keys_pressed: keys_pressed.clone(), message_queue: message_queue.clone(),
-        http_queue, http_responses, cli_queue, cli_responses,
+        http_queue, http_responses, cli_queue, cli_responses, outgoing_messages, sockets_dir: sockets_dir.clone(),
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
         exit: false, width: final_width, height: final_height, needs_redraw: true, configured: false, timer_active: false, last_svg_hash: 0, last_js_update: 0.0,
@@ -1239,5 +1276,87 @@ mod tests {
         ops.insert("to-remove".to_string(), vec![SvgOp::Remove]);
         apply_ops_to_svg(&mut root, ops);
         assert!(find_element_by_id(&mut root, "to-remove").is_none());
+    }
+
+    #[test]
+    fn test_full_js_integration() {
+        let svg = r#"<svg viewBox="0 0 100 100"><rect id="rect1" x="0" y="0" width="10" height="10" /><g id="group1"></g></svg>"#;
+        let mut root = Element::parse(svg.as_bytes()).unwrap();
+        let mut js_context = JsContext::default();
+        
+        js_context.register_global_class::<WidgetAPI>().unwrap();
+        js_context.register_global_class::<ElementHandle>().unwrap();
+        js_context.register_global_class::<WidgetState>().unwrap();
+        js_context.register_global_class::<crate::RefreshRequest>().unwrap();
+        
+        let api_proto = get_proto::<WidgetAPI>(&mut js_context);
+        let state_proto = get_proto::<WidgetState>(&mut js_context);
+        let request_proto = get_proto::<crate::RefreshRequest>(&mut js_context);
+        
+        let shared_ops = Arc::new(Mutex::new(HashMap::new()));
+        let shared_state = Arc::new(Mutex::new(HashMap::new()));
+        let refresh_delay = Arc::new(Mutex::new(None));
+        let capture_keyboard = Arc::new(Mutex::new(false));
+        let capture_clicks = Arc::new(Mutex::new(false));
+
+        let js_code = r#"
+            function update(api, timestamp, click, keys, state, request) {
+                api.findById("rect1").setRotation(90).setOpacity(0.7);
+                api.findById("group1").appendElement("circle", { id: "dynamic_circle", r: "5" });
+                state.set("last_ts", timestamp.toString());
+                request.refreshInMS(500);
+                if (keys && keys[0] === "Enter") {
+                    state.set("key_pressed", "true");
+                }
+                request.sendMessage("other-widget", "hello from test");
+            }
+        "#;
+        js_context.eval(Source::from_bytes(js_code.as_bytes())).unwrap();
+
+        let api_data = WidgetAPI { ops: shared_ops.clone(), handle_proto: get_proto::<ElementHandle>(&mut js_context) };
+        let js_api = JsObject::from_proto_and_data(Some(api_proto), api_data);
+        
+        let state_data = WidgetState { data: shared_state.clone(), states_file: PathBuf::from("test_states.yml") };
+        let js_state = JsObject::from_proto_and_data(Some(state_proto), state_data);
+
+        let outgoing_messages = Arc::new(Mutex::new(Vec::new()));
+        let request_data = crate::RefreshRequest { 
+            delay_ms: refresh_delay.clone(),
+            capture_keyboard: capture_keyboard.clone(),
+            capture_clicks: capture_clicks.clone(),
+            incoming_messages: Arc::new(Mutex::new(false)),
+            exit_trigger: Arc::new(Mutex::new(None)),
+            http_queue: Arc::new(Mutex::new(Vec::new())),
+            cli_queue: Arc::new(Mutex::new(Vec::new())),
+            outgoing_messages: outgoing_messages.clone(),
+        };
+        let js_request = JsObject::from_proto_and_data(Some(request_proto), request_data);
+
+        let js_keys = boa_engine::object::builtins::JsArray::new(&mut js_context);
+        js_keys.push(JsString::from("Enter"), &mut js_context).ok();
+
+        let update_func = js_context.global_object().get(JsString::from("update"), &mut js_context).unwrap();
+        update_func.as_object().unwrap().call(
+            &JsValue::undefined(),
+            &[js_api.into(), JsValue::new(12345), JsValue::undefined(), js_keys.into(), js_state.into(), js_request.into()],
+            &mut js_context
+        ).unwrap();
+
+        let ops = shared_ops.lock().unwrap().clone();
+        apply_ops_to_svg(&mut root, ops);
+
+        let rect = find_element_by_id(&mut root, "rect1").unwrap();
+        assert_eq!(rect.attributes.get("transform").unwrap(), "rotate(90, 50, 50)");
+        assert_eq!(rect.attributes.get("opacity").unwrap(), "0.7");
+
+        assert!(find_element_by_id(&mut root, "dynamic_circle").is_some());
+        assert_eq!(shared_state.lock().unwrap().get("last_ts").unwrap(), "12345");
+        assert_eq!(shared_state.lock().unwrap().get("key_pressed").unwrap(), "true");
+        assert_eq!(refresh_delay.lock().unwrap().unwrap(), 500);
+        
+        let msgs = outgoing_messages.lock().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].name, "other-widget");
+        assert_eq!(msgs[0].message, "hello from test");
     }
 }
