@@ -14,9 +14,10 @@ pub struct CliResult {
     pub error: Option<String>,
 }
 
-pub fn process_cli_queue(calls: Vec<CliCall>, responses: Arc<Mutex<HashMap<String, CliResult>>>) {
+pub fn process_cli_queue(calls: Vec<CliCall>, responses: Arc<Mutex<HashMap<String, CliResult>>>, loop_signal: smithay_client_toolkit::reexports::calloop::LoopSignal) {
     for call in calls {
         let responses = responses.clone();
+        let loop_signal = loop_signal.clone();
         std::thread::spawn(move || {
             let result = Command::new("sh")
                 .arg("-c")
@@ -38,6 +39,7 @@ pub fn process_cli_queue(calls: Vec<CliCall>, responses: Arc<Mutex<HashMap<Strin
                 }
             };
             responses.lock().unwrap().insert(call.command, cli_res);
+            loop_signal.wakeup();
         });
     }
 }

@@ -533,9 +533,12 @@ pub struct WayWidget {
     pub width: u32,
     pub height: u32,
     pub needs_redraw: bool,
+    pub configured: bool,
+    pub timer_active: bool,
     pub last_svg_hash: u64,
     pub last_js_update: f64,
     
+    pub loop_signal: smithay_client_toolkit::reexports::calloop::LoopSignal,
     pub widget_name: String,
     pub positions_file: PathBuf,
     pub states_file: PathBuf,
@@ -565,10 +568,10 @@ impl WayWidget {
 
     fn process_queues(&mut self) {
         let h_calls = { let mut lock = self.http_queue.lock().unwrap(); std::mem::take(&mut *lock) };
-        process_http_queue(h_calls, self.http_responses.clone());
+        process_http_queue(h_calls, self.http_responses.clone(), self.loop_signal.clone());
 
         let c_calls = { let mut lock = self.cli_queue.lock().unwrap(); std::mem::take(&mut *lock) };
-        process_cli_queue(c_calls, self.cli_responses.clone());
+        process_cli_queue(c_calls, self.cli_responses.clone(), self.loop_signal.clone());
     }
 
     fn ensure_context(&mut self) {
@@ -752,7 +755,7 @@ impl WayWidget {
             }
         }
 
-        if !self.needs_redraw { return; }
+        if !self.needs_redraw || !self.configured { return; }
 
         let (buffer, canvas) = self.pool.create_buffer(self.width as i32, self.height as i32, self.width as i32 * 4, wl_shm::Format::Argb8888).expect("create buffer");
         unsafe {
@@ -820,25 +823,26 @@ impl LayerShellHandler for WayWidget {
         self.exit = true;
     }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
+        self.configured = true;
         let (new_w, new_h) = configure.new_size;
         if new_w != self.width || new_h != self.height {
             self.width = new_w; self.height = new_h; self.save_positions();
         }
         self.needs_redraw = true;
-        self.draw();
     }
 }
 
 impl WindowHandler for WayWidget {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) { self.exit = true; }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window, configure: WindowConfigure, _: u32) {
+        self.configured = true;
         let (w, h) = configure.new_size;
         let new_w = w.map(|v| v.get()).unwrap_or(self.width);
         let new_h = h.map(|v| v.get()).unwrap_or(self.height);
         if new_w != self.width || new_h != self.height {
             self.width = new_w; self.height = new_h; self.save_positions();
         }
-        self.needs_redraw = true; self.draw();
+        self.needs_redraw = true;
     }
 }
 
@@ -890,7 +894,6 @@ impl PointerHandler for WayWidget {
                                 layer.commit();
                                 self.save_positions();
                                 self.needs_redraw = true;
-                                self.draw();
                             }
                         }
                     }
@@ -920,7 +923,7 @@ impl PointerHandler for WayWidget {
                                 }
                             }
                         }
-                        self.draw();
+                        self.needs_redraw = true;
                     }
                 }
                 PointerEventKind::Release { button, .. } => {
@@ -1049,8 +1052,13 @@ fn main() -> anyhow::Result<()> {
     let incoming_messages = Arc::new(Mutex::new(false));
     let exit_trigger = Arc::new(Mutex::new(None));
 
+    let mut event_loop: EventLoop<WayWidget> = EventLoop::try_new().expect("create event loop");
+    let handle = event_loop.handle();
+    let loop_signal = event_loop.get_signal();
+
     let listener_queue = message_queue.clone();
     let listener_path = socket_path.clone();
+    let listener_waker = loop_signal.clone();
     std::thread::spawn(move || {
         use std::os::unix::net::UnixListener;
         use std::io::Read;
@@ -1060,6 +1068,7 @@ fn main() -> anyhow::Result<()> {
                     let mut buffer = String::new();
                     if stream.read_to_string(&mut buffer).is_ok() {
                         listener_queue.lock().unwrap().push(buffer);
+                        listener_waker.wakeup();
                     }
                 }
             }
@@ -1131,44 +1140,47 @@ fn main() -> anyhow::Result<()> {
         http_queue, http_responses, cli_queue, cli_responses,
         pointer: None, keyboard: None, seat: None, pointer_pos: (0.0, 0.0), last_click: None, clicked_id: None, is_hovering: false,
         is_dragging: false, is_resizing: false, drag_start_pos: (0.0, 0.0), drag_start_margin: (cfg.x, cfg.y), resize_start_size: (final_width, final_height),
-        exit: false, width: final_width, height: final_height, needs_redraw: true, last_svg_hash: 0, last_js_update: 0.0,
+        exit: false, width: final_width, height: final_height, needs_redraw: true, configured: false, timer_active: false, last_svg_hash: 0, last_js_update: 0.0,
+        loop_signal: loop_signal.clone(),
         widget_name, positions_file: positions_file.clone(), states_file: states_file.clone(), pid_file, socket_path, current_config: cfg,
     };
 
-    let mut event_loop: EventLoop<WayWidget> = EventLoop::try_new().expect("create event loop");
-    let handle = event_loop.handle();
     WaylandSource::new(conn, event_queue).insert(handle.clone()).expect("insert wayland source");
 
-    let timer = Timer::from_duration(Duration::from_millis(10));
-    handle.insert_source(timer, move |_, _, app| {
-        let delay = { let mut lock = app.refresh_delay.lock().unwrap(); lock.take() };
+    while !app.exit {
+        // Block until an event occurs
+        event_loop.dispatch(None, &mut app).expect("dispatch");
         
-        // 1. Check if an async event or input occurred
-        let has_async = !app.http_responses.lock().unwrap().is_empty() || 
-                        !app.cli_responses.lock().unwrap().is_empty() ||
-                        !app.message_queue.lock().unwrap().is_empty() ||
-                        !app.keys_pressed.lock().unwrap().is_empty() ||
-                        app.last_click.is_some();
-
-        if let Some(ms) = delay {
-            // Widget requested a timed update
+        // After waking, if an event (input, configure, signal) requested a redraw, do it once.
+        if app.needs_redraw {
             app.draw();
-            TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
-        } else if has_async {
-            // Background event occurred, update immediately
-            app.draw();
-            TimeoutAction::ToDuration(Duration::from_millis(100))
-        } else {
-            // Check for inactivity (30s)
-            if app.last_activity.elapsed().as_secs() > 30 {
-                app.dispose_context();
-            }
-            // Truly idle, check again in 100ms
-            TimeoutAction::ToDuration(Duration::from_millis(100))
         }
-    }).expect("insert timer");
 
-    while !app.exit { event_loop.dispatch(Duration::from_millis(10), &mut app).expect("dispatch"); }
+        // Memory optimization: clear JS context after 30s of inactivity
+        if app.js_context.is_some() && app.last_activity.elapsed().as_secs() > 30 {
+            app.dispose_context();
+        }
+
+        // If JS requested a timed refresh, ensure we have a timer scheduled.
+        let has_refresh = app.refresh_delay.lock().unwrap().is_some();
+        if has_refresh && !app.timer_active {
+            app.timer_active = true;
+            let timer = Timer::from_duration(Duration::from_millis(0));
+            let handle = event_loop.handle();
+            let _ = handle.insert_source(timer, move |_, _, app| {
+                app.timer_active = false;
+                let delay = { let mut lock = app.refresh_delay.lock().unwrap(); lock.take() };
+                if let Some(ms) = delay {
+                    app.needs_redraw = true;
+                    app.draw();
+                    app.timer_active = true;
+                    TimeoutAction::ToDuration(Duration::from_millis(ms as u64))
+                } else {
+                    TimeoutAction::Drop
+                }
+            });
+        }
+    }
     Ok(())
 }
 

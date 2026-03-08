@@ -22,9 +22,10 @@ pub struct HttpResult {
     pub error: Option<String>,
 }
 
-pub fn process_http_queue(calls: Vec<HttpCall>, responses: Arc<Mutex<HashMap<String, HttpResult>>>) {
+pub fn process_http_queue(calls: Vec<HttpCall>, responses: Arc<Mutex<HashMap<String, HttpResult>>>, loop_signal: smithay_client_toolkit::reexports::calloop::LoopSignal) {
     for call in calls {
         let responses = responses.clone();
+        let loop_signal = loop_signal.clone();
         std::thread::spawn(move || {
             let agent = ureq::Agent::new_with_defaults();
             
@@ -57,6 +58,7 @@ pub fn process_http_queue(calls: Vec<HttpCall>, responses: Arc<Mutex<HashMap<Str
                 }
             };
             responses.lock().unwrap().insert(call.url, http_res);
+            loop_signal.wakeup();
         });
     }
 }
