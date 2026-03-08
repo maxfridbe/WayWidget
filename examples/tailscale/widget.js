@@ -1,4 +1,4 @@
-const POLL_INTERVAL = 10000; // Poll every 10 seconds
+const POLL_INTERVAL = 30000; // Poll every 30 seconds
 const TS_CMD = "distrobox-host-exec tailscale status --json";
 
 function update(api, timestamp, response, state, request) {
@@ -12,14 +12,25 @@ function update(api, timestamp, response, state, request) {
             state.set("last_update", timestamp.toString());
         }
 
-        // Fast refresh if we just clicked
+        // Handle clicks for copying and toast
         if (response.click) {
-            request.CliInvoke(TS_CMD);
-            state.set("last_update", timestamp.toString());
-            request.refreshInMS(100);
-        } else {
-            request.refreshInMS(1000); // Check for CLI response every second
+            let elementId = response.click.id;
+            if (elementId && elementId.startsWith("peer-row-")) {
+                let ip = elementId.replace("peer-row-", "");
+                request.CliInvoke("echo -n " + ip + " | distrobox-host-exec wl-copy");
+                showToast(api, state, timestamp);
+            }
         }
+
+        // Auto-hide toast after 2 seconds
+        let toastShownAt = parseInt(state.get("toast_shown_at") || "0");
+        if (toastShownAt > 0 && timestamp - toastShownAt > 2000) {
+            api.findById("toast-bg").setOpacity(0);
+            api.findById("toast-text").setOpacity(0);
+            state.set("toast_shown_at", "0");
+        }
+
+        request.refreshInMS(1000); 
     }
 
     // Process CLI output
@@ -32,39 +43,114 @@ function update(api, timestamp, response, state, request) {
             } catch (e) {
                 console.log("Error parsing Tailscale JSON: " + e);
             }
-        } else {
-            api.findById("hostname").setText("Error");
-            api.findById("status-dot").setAttribute("fill", "#ff4444");
         }
     }
 }
 
+function showToast(api, state, timestamp) {
+    api.findById("toast-bg").setOpacity(0.9);
+    api.findById("toast-text").setOpacity(1);
+    state.set("toast_shown_at", timestamp.toString());
+}
+
 function updateUI(api, status) {
-    // Hostname
+    // Self Info
     let hostname = status.Self.HostName || "Unknown";
     api.findById("hostname").setText(hostname);
 
-    // IP
     let ip = (status.Self.TailscaleIPs && status.Self.TailscaleIPs[0]) || "--.---.---.--";
-    api.findById("ip").setText(ip);
+    api.findById("self-ip").setText(ip);
 
-    // Backend State / Color
-    let stateColor = "#555555";
-    if (status.BackendState === "Running") {
-        stateColor = "#44ff44"; // Connected
-    } else if (status.BackendState === "NeedsLogin" || status.BackendState === "Stopped") {
-        stateColor = "#ffaa00"; // Warn
-    }
+    let stateColor = status.BackendState === "Running" ? "#44ff44" : "#ffaa00";
     api.findById("status-dot").setAttribute("fill", stateColor);
 
-    // Peers
-    let onlinePeers = 0;
+    // Peer List
+    let container = api.findById("peer-list");
+    container.clearChildren();
+
+    let onlinePeers = [];
     if (status.Peer) {
         for (let p in status.Peer) {
-            if (status.Peer[p].Online) {
-                onlinePeers++;
+            let peer = status.Peer[p];
+            if (peer.Online) {
+                onlinePeers.push(peer);
             }
         }
     }
-    api.findById("peers-count").setText(onlinePeers.toString());
+
+    // Sort peers by hostname
+    onlinePeers.sort((a, b) => a.HostName.localeCompare(b.HostName));
+    api.findById("peers-online").setText(onlinePeers.length + " Online");
+
+    // Render peer rows
+    let yOffset = 0;
+    const ROW_HEIGHT = 35;
+    const MAX_VISIBLE = 8; // Limit to 8 visible peers to fit in 400px height
+
+    onlinePeers.slice(0, MAX_VISIBLE).forEach((peer, index) => {
+        let peerIP = peer.TailscaleIPs[0];
+        
+        // Background rectangle for interaction
+        container.appendElement("rect", {
+            id: "peer-row-" + peerIP,
+            x: "-5",
+            y: yOffset.toString(),
+            width: "300",
+            height: (ROW_HEIGHT - 5).toString(),
+            rx: "4",
+            fill: index % 2 === 0 ? "#1a1a1a" : "#151515",
+            opacity: "0.8"
+        });
+
+        // Peer hostname
+        container.appendElement("text", {
+            x: "10",
+            y: (yOffset + 14).toString(),
+            "font-family": "sans-serif",
+            "font-size": "11",
+            "font-weight": "bold",
+            fill: "white",
+            style: "pointer-events: none;"
+        }).setText(peer.HostName);
+
+        // Peer IP
+        container.appendElement("text", {
+            x: "10",
+            y: (yOffset + 26).toString(),
+            "font-family": "monospace",
+            "font-size": "9",
+            fill: "#888",
+            style: "pointer-events: none;"
+        }).setText(peerIP);
+
+        // Online dot
+        container.appendElement("circle", {
+            cx: "285",
+            cy: (yOffset + 15).toString(),
+            r: "3",
+            fill: "#44ff44",
+            style: "pointer-events: none;"
+        });
+
+        yOffset += ROW_HEIGHT;
+    });
+
+    if (onlinePeers.length === 0) {
+        container.appendElement("text", {
+            x: "145",
+            y: "50",
+            "font-family": "sans-serif",
+            "font-size": "12",
+            fill: "#666",
+            "text-anchor": "middle"
+        }).setText("No online peers found.");
+    } else if (onlinePeers.length > MAX_VISIBLE) {
+        container.appendElement("text", {
+            x: "10",
+            y: (yOffset + 10).toString(),
+            "font-family": "sans-serif",
+            "font-size": "10",
+            fill: "#444"
+        }).setText("+ " + (onlinePeers.length - MAX_VISIBLE) + " more peers...");
+    }
 }
