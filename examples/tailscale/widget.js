@@ -14,22 +14,25 @@ function update(api, timestamp, response, state, request) {
 
         if (response.click) {
             let id = response.click.id;
-            if (id && id.startsWith("peer-card-")) {
-                let ip = id.replace("peer-card-", "");
-                request.CliInvoke("echo -n " + ip + " | distrobox-host-exec wl-copy");
-                showToast(api, state, timestamp, "IP Copied: " + ip);
-            } else if (id && id.startsWith("exit-btn-")) {
+            console.log("Clicked ID: " + id);
+            if (id && id.startsWith("exit-btn-")) {
                 let ip = id.replace("exit-btn-", "");
                 let cmd = "distrobox-host-exec tailscale up --exit-node=" + ip;
+                console.log("Setting exit node with cmd: " + cmd);
                 LAST_EXIT_CMD = cmd;
                 request.CliInvoke(cmd);
                 showToast(api, state, timestamp, "Setting exit node...");
+            } else if (id && id.startsWith("peer-card-")) {
+                let ip = id.replace("peer-card-", "");
+                request.CliInvoke("echo -n " + ip + " | distrobox-host-exec wl-copy");
+                showToast(api, state, timestamp, "IP Copied: " + ip);
             }
         }
 
         // Check for CLI response from exit node command
         if (LAST_EXIT_CMD && response.cli && response.cli[LAST_EXIT_CMD]) {
             let res = response.cli[LAST_EXIT_CMD];
+            console.log("Exit Node CLI Response: " + JSON.stringify(res));
             let msg = res.error ? "Error: " + res.error : "Exit node set!";
             showToast(api, state, timestamp, msg);
             LAST_EXIT_CMD = "";
@@ -144,8 +147,9 @@ function renderPeers(api, status) {
 
         // Exit Node Button
         if (peer.ExitNodeOption && !peer.IsSelf && !peer.ExitNode) {
-            let btnG = row.appendElement("g", { id: exitBtnId });
+            let btnG = row.appendElement("g", {});
             btnG.appendElement("rect", {
+                id: exitBtnId,
                 width: "60",
                 height: "18",
                 x: "245",
