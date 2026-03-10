@@ -1,5 +1,5 @@
 const POLL_INTERVAL = 30000;
-const TS_CMD = "distrobox-host-exec tailscale status --json";
+const TS_CMD = "tailscale status --json";
 let LAST_EXIT_CMD = "";
 
 function update(api, timestamp, response, state, request) {
@@ -8,6 +8,7 @@ function update(api, timestamp, response, state, request) {
         
         let lastUpdate = parseInt(state.get("last_update") || "0");
         if (timestamp - lastUpdate > POLL_INTERVAL || lastUpdate === 0) {
+            console.log("Invoking Tailscale status command...");
             request.CliInvoke(TS_CMD);
             state.set("last_update", timestamp.toString());
         }
@@ -17,14 +18,20 @@ function update(api, timestamp, response, state, request) {
             console.log("Clicked ID: " + id);
             if (id && id.startsWith("exit-btn-")) {
                 let ip = id.replace("exit-btn-", "");
-                let cmd = "distrobox-host-exec tailscale up --exit-node=" + ip;
+                let cmd = "tailscale up --exit-node=" + ip;
                 console.log("Setting exit node with cmd: " + cmd);
                 LAST_EXIT_CMD = cmd;
                 request.CliInvoke(cmd);
                 showToast(api, state, timestamp, "Setting exit node...");
+            } else if (id && id.startsWith("deactivate-btn")) {
+                let cmd = "tailscale up --exit-node=";
+                console.log("Deactivating exit node with cmd: " + cmd);
+                LAST_EXIT_CMD = cmd;
+                request.CliInvoke(cmd);
+                showToast(api, state, timestamp, "Deactivating exit node...");
             } else if (id && id.startsWith("peer-card-")) {
                 let ip = id.replace("peer-card-", "");
-                request.CliInvoke("echo -n " + ip + " | distrobox-host-exec wl-copy");
+                request.CliInvoke("echo -n " + ip + " | wl-copy");
                 showToast(api, state, timestamp, "IP Copied: " + ip);
             }
         }
@@ -48,13 +55,20 @@ function update(api, timestamp, response, state, request) {
         request.refreshInMS(1000);
     }
 
-    if (response.cli && response.cli[TS_CMD]) {
-        let res = response.cli[TS_CMD];
-        if (!res.error) {
-            try {
-                let status = JSON.parse(res.output);
-                renderPeers(api, status);
-            } catch(e) { console.log("JSON Parse Error: " + e); }
+    if (response.cli) {
+        if (response.cli[TS_CMD]) {
+            let res = response.cli[TS_CMD];
+            if (!res.error) {
+                try {
+                    let status = JSON.parse(res.output);
+                    renderPeers(api, status);
+                } catch(e) { 
+                    console.log("JSON Parse Error: " + e);
+                    console.log("Raw output was: " + res.output.substring(0, 100) + "...");
+                }
+            } else {
+                console.log("CLI Error for status: " + res.error);
+            }
         }
     }
 }
@@ -168,15 +182,27 @@ function renderPeers(api, status) {
                 style: "pointer-events: none;"
             }).setText("USE EXIT");
         } else if (peer.ExitNode) {
-            // Already active exit node
-            row.appendElement("text", {
-                x: "275",
+            // Active exit node - show red deactivate button
+            let btnG = row.appendElement("g", {});
+            btnG.appendElement("rect", {
+                id: "deactivate-btn-" + i,
+                width: "70",
+                height: "18",
+                x: "235",
+                y: "13",
+                rx: "9",
+                fill: "#FF3B30",
+                style: "cursor: pointer;"
+            });
+            btnG.appendElement("text", {
+                x: "270",
                 y: "25",
-                "font-size": "9",
-                fill: "#34C759",
+                "font-size": "8",
+                "font-weight": "bold",
+                fill: "white",
                 "text-anchor": "middle",
-                "font-weight": "bold"
-            }).setText("ACTIVE");
+                style: "pointer-events: none;"
+            }).setText("DEACTIVATE");
         } else {
             // Just show IP
             row.appendElement("text", {
