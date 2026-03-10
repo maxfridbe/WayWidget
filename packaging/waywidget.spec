@@ -1,5 +1,5 @@
 Name:           waywidget
-Version:        0.1.14
+Version:        0.1.15
 Release:        1%{?dist}
 Summary:        SVG-to-Cairo Wayland Widget System
 
