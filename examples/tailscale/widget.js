@@ -159,21 +159,30 @@ function renderPeers(api, status) {
             style: "pointer-events: none;"
         }).setText(meta);
 
+        // IP (Always show)
+        row.appendElement("text", {
+            x: "306",
+            y: "26",
+            "text-anchor": "end",
+            class: "text-ip",
+            style: "pointer-events: none;"
+        }).setText(ip);
+
         // Exit Node Button
         if (peer.ExitNodeOption && !peer.IsSelf && !peer.ExitNode) {
             let btnG = row.appendElement("g", {});
             btnG.appendElement("rect", {
                 id: exitBtnId,
-                width: "60",
+                width: "54",
                 height: "18",
-                x: "245",
+                x: "165",
                 y: "13",
                 rx: "9",
                 fill: "#34C759",
                 style: "cursor: pointer;"
             });
             btnG.appendElement("text", {
-                x: "275",
+                x: "192",
                 y: "25",
                 "font-size": "8",
                 "font-weight": "bold",
@@ -186,16 +195,16 @@ function renderPeers(api, status) {
             let btnG = row.appendElement("g", {});
             btnG.appendElement("rect", {
                 id: "deactivate-btn-" + i,
-                width: "70",
+                width: "64",
                 height: "18",
-                x: "235",
+                x: "155",
                 y: "13",
                 rx: "9",
                 fill: "#FF3B30",
                 style: "cursor: pointer;"
             });
             btnG.appendElement("text", {
-                x: "270",
+                x: "187",
                 y: "25",
                 "font-size": "8",
                 "font-weight": "bold",
@@ -203,15 +212,6 @@ function renderPeers(api, status) {
                 "text-anchor": "middle",
                 style: "pointer-events: none;"
             }).setText("DEACTIVATE");
-        } else {
-            // Just show IP
-            row.appendElement("text", {
-                x: "306",
-                y: "26",
-                "text-anchor": "end",
-                class: "text-ip",
-                style: "pointer-events: none;"
-            }).setText(ip);
         }
 
         y += ROW_H;
